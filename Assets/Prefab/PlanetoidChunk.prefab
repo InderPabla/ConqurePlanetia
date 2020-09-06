@@ -10,7 +10,7 @@ GameObject:
   m_Component:
   - component: {fileID: 1919669648000274641}
   - component: {fileID: 2582068673568886831}
-  m_Layer: 0
+  m_Layer: 10
   m_Name: PlanetoidChunk
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -43,3 +43,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: b3fd7e5b9cbb91941aadd58f924ee580, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  HighlightMaterial: {fileID: 2100000, guid: 7002a36dd48d6e747a2a6746b234b4b2, type: 2}
+  HousePrefab: {fileID: 4849641186892457814, guid: 1ff029b48f9806e41be1c0f95d919bdb,
+    type: 3}

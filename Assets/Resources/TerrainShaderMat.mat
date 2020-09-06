@@ -21,7 +21,7 @@ Material:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_Name: TerrainShaderMat
-  m_Shader: {fileID: -6465566751694194690, guid: 75ec394f6eea5584290ebb2b86fe3d99,
+  m_Shader: {fileID: -6465566751694194690, guid: a2383cc00f5f9154a8a63ec12cd46e14,
     type: 3}
   m_ShaderKeywords: 
   m_LightmapFlags: 4
@@ -58,6 +58,10 @@ Material:
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _SpecGlossMap:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _UVHeightTexture:
         m_Texture: {fileID: 0}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}

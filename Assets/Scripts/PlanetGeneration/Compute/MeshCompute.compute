@@ -1,0 +1,341 @@
+﻿// Each #kernel tells which function to compile; you can have many kernels
+#pragma kernel MeshCompute
+#include "/Noise.compute"
+
+
+static const int numThreads = 8;
+
+struct TriangleCompute {
+	int A;
+	int B;
+	int C;
+};
+
+
+struct KeyframeCompute {
+	float Time;
+	float InTangent;
+	float OutTangent;
+	float Value;
+	float a, b, c, d;
+};
+
+struct SimpleNoiseSettingCompute
+{
+	float3 Offset;
+	int Seed;
+
+	int Octaves;
+	float Lacunarity;
+	float Scale;
+	float Persistence;
+	float Weight;
+	float MinValue;
+
+	float BaseLacunarity;
+	float StrengthMultiplier;
+
+	int Enabled;
+
+	KeyframeCompute Keyframe1;
+	KeyframeCompute Keyframe2;
+	KeyframeCompute Keyframe3;
+	KeyframeCompute Keyframe4;
+	KeyframeCompute Keyframe5;
+};
+
+
+RWStructuredBuffer<float3> vertexBufferArray;
+RWStructuredBuffer<float2> uvBufferArray;
+RWStructuredBuffer<float> heightBufferArray;
+AppendStructuredBuffer<TriangleCompute> triangleBufferList;
+//RWTexture2D<float4> renderTextureData;
+
+StructuredBuffer<SimpleNoiseSettingCompute> noiseBufferArray;
+
+float Radius;
+
+int EdgeRes;
+int VertRes;
+int Resolution;
+int TotalEdges;
+int TotalVerts;
+int NumberOfNoiseSettings;
+int UpResolution;
+int DownResolution;
+int LeftResolution;
+int RightResolution;
+float MaxHeight;
+float2 StartPosition;
+float3 DirVec;
+float3 AxisA;
+float3 AxisB;
+
+
+
+float KeyFrameEvaluate(float t, KeyframeCompute keyframe0, KeyframeCompute keyframe1)
+{
+	/*float dt = keyframe1.Time - keyframe0.Time;
+	t = (t - keyframe0.Time) / dt;
+
+	float m0 = keyframe0.OutTangent * dt;
+	float m1 = keyframe1.InTangent * dt;
+
+	float t2 = t * t;
+	float t3 = t2 * t;
+
+	float a = 2 * t3 - 3 * t2 + 1;
+	float b = t3 - 2 * t2 + t;
+	float c = t3 - t2;
+	float d = -2 * t3 + 3 * t2;
+
+	return a * keyframe0.Value + b * m0 + c * m1 + d * keyframe1.Value;*/
+
+	return keyframe1.a * t * t * t + keyframe1.b * t * t + keyframe1.c * t + keyframe1.d;
+}
+
+float3 OnSphereNormalized(float3 OnCube)
+{
+	float3 v = OnCube;
+	float x2 = v.x * v.x;
+	float y2 = v.y * v.y;
+	float z2 = v.z * v.z;
+
+	return float3(v.x * sqrt(abs(1.0 - (y2 / 2.0) - (z2 / 2.0) + (y2 * z2 / 3.0))), v.y * sqrt(abs(1.0 - (x2 / 2.0) - (z2 / 2.0) + (x2 * z2 / 3.0))), v.z * sqrt(abs(1.0 - (x2 / 2.0) - (y2 / 2.0) + (x2 * y2 / 3.0))));
+}
+
+float3 OnCube(float X, float Y)
+{
+	float2 Percent = float2(X, Y) / (float)TotalEdges;
+	float3 OnCube = DirVec.xyz + ((Percent.x - 0.5) * 2.0 * AxisA.xyz) + ((Percent.y - 0.5) * 2.0 * AxisB.xyz);
+	return OnCube;
+}
+
+
+float3 CubeToSphere(float X, float Y) {
+	return OnSphereNormalized(OnCube(X, Y));
+}
+
+// Hash function from H. Schechter & R. Bridson, goo.gl/RXiKaH
+uint Hash(uint s)
+{
+	s ^= 2747636419u;
+	s *= 2654435769u;
+	s ^= s >> 16;
+	s *= 2654435769u;
+	s ^= s >> 16;
+	s *= 2654435769u;
+	return s;
+}
+
+float Random(uint seed)
+{
+	return float(Hash(seed)) / 4294967295.0; // 2^32-1
+}
+
+[numthreads(numThreads, numThreads, 1)]
+void MeshCompute(uint2 id : SV_DispatchThreadID)
+{
+	int x = id.x;
+	int y = id.y;
+
+	//This is the correct check! (Do not check VectorIndex), because some calculations will give correct VectorIndex, but still invalid x and y values
+	if (x<0 || x>VertRes - 1 || y<0 || y>VertRes - 1) return;
+
+	int VectorIndex = (y * VertRes) + x;
+	
+	
+	float X = StartPosition.x + (x * Resolution);
+	float Y = StartPosition.y + (y * Resolution);
+
+	float noiseAtPoint = 0.0;
+	float offsetNoise = 0;
+	float3 PointOnSphere = CubeToSphere(X, Y);
+
+	for (int n = 0; n < NumberOfNoiseSettings; n++) {
+		SimpleNoiseSettingCompute noise = noiseBufferArray[n];
+		if (noise.Enabled==0) continue;
+
+		float noiseVal = 0.0;
+		float frequency = noise.BaseLacunarity;
+		float amplitude = 1.0;
+		float weight = 1;
+
+		for (int o = 0; o < noise.Octaves; o++) {
+			//float sn = snoise( ((PointOnSphere + offsetNoise) * frequency + noise.Offset));
+		
+			//float sn = snoise((PointOnSphere + noise.Offset) / noise.Scale * frequency);
+
+			//float rn = Random(noise.Seed + (o*n)+o);
+			//float octaveOffset = float3(rn, rn, rn);
+			//float ovt = snoise(octaveOffset);
+			//float3 rn2 = float3(ovt, ovt, ovt);
+			float sn = snoise( ((PointOnSphere) / (noise.Scale * frequency)) + noise.Offset);
+		
+			/*float v = 1 - abs(sn);
+			v = v * v;
+			v *= weight;
+			weight = max(min(v * noise.Weight, 1), 0);*/
+
+			//float v = ((sn + 1.0) / 2.0);
+			//v = 1 - abs(sn);
+			//v *= v;
+
+			float v = (sn + 1) * 0.5;
+
+
+			if (v <= noise.Keyframe2.Time) {
+				v *= KeyFrameEvaluate(v, noise.Keyframe1, noise.Keyframe2);
+			}
+			else if (v <= noise.Keyframe3.Time) {
+				v *= KeyFrameEvaluate(v, noise.Keyframe2, noise.Keyframe3);
+			}
+			else if (v <= noise.Keyframe4.Time) {
+				v *= KeyFrameEvaluate(v, noise.Keyframe3, noise.Keyframe4);
+			}
+			else if (v <= noise.Keyframe5.Time) {
+				v *= KeyFrameEvaluate(v, noise.Keyframe4, noise.Keyframe5);
+			}
+
+			weight = max(min(v * noise.Weight, 1.0), 0.0);
+
+			v *= weight;
+
+			noiseVal += v * amplitude;
+			amplitude *= noise.Persistence;
+			frequency *= noise.Lacunarity;
+
+			
+		}
+
+		noiseVal = max(0, noiseVal - noise.MinValue);
+
+		noiseVal *= noise.StrengthMultiplier;
+		noiseAtPoint += noiseVal;
+	}
+
+	heightBufferArray[VectorIndex] = noiseAtPoint;
+	vertexBufferArray[VectorIndex] = PointOnSphere * (Radius + noiseAtPoint);
+	uvBufferArray[VectorIndex] = float2((float)x / ((float)EdgeRes), (float)y / ((float)EdgeRes));
+
+	//float height01 = heightBufferArray[VectorIndex] / MaxHeight;
+	//renderTextureData[id.xy] = float4(height01, height01, height01, 1.0);
+
+
+
+	if (x < VertRes - 1 && y < VertRes - 1)
+	{
+		bool CreateDefaultTris = true;
+		
+		if (x == 0 && LeftResolution != 1) {
+			if (y % LeftResolution == 0) {
+				TriangleCompute tri1;
+				tri1.A = VectorIndex;
+				tri1.B = VectorIndex + 1 + (VertRes*(LeftResolution /2));
+				tri1.C = VectorIndex + (VertRes * (LeftResolution));
+				triangleBufferList.Append(tri1);
+
+				TriangleCompute tri2;
+				tri2.A = VectorIndex;
+				tri2.B = VectorIndex + 1;
+				tri2.C = VectorIndex + 1 + (VertRes * (LeftResolution / 2));
+				triangleBufferList.Append(tri2);
+
+				TriangleCompute tri3;
+				tri3.A = VectorIndex + 1 + (VertRes * (LeftResolution / 2));
+				tri3.B = VectorIndex + 1 + (VertRes * (LeftResolution));
+				tri3.C = VectorIndex + (VertRes * (LeftResolution));
+				triangleBufferList.Append(tri3);
+			}
+
+			CreateDefaultTris = false;
+		}
+		else if (x == VertRes - 2 && RightResolution != 1) {
+			if (y % RightResolution == 0) {
+				TriangleCompute tri1;
+				tri1.A = VectorIndex + 1;
+				tri1.B = VectorIndex + (VertRes * (RightResolution)) + 1;
+				tri1.C = VectorIndex + (VertRes * (RightResolution / 2));
+				triangleBufferList.Append(tri1);
+
+				TriangleCompute tri2;
+				tri2.A = VectorIndex;
+				tri2.B = VectorIndex + 1;
+				tri2.C = VectorIndex + (VertRes * (RightResolution / 2));
+				triangleBufferList.Append(tri2);
+
+				TriangleCompute tri3;
+				tri3.A = VectorIndex + (VertRes * (RightResolution / 2));
+				tri3.B = VectorIndex + (VertRes * (RightResolution)) + 1;
+				tri3.C = VectorIndex + (VertRes * (RightResolution));
+				triangleBufferList.Append(tri3);
+			}
+
+			CreateDefaultTris = false;
+		}
+
+		if (y == 0 && UpResolution !=1)
+		{
+			if (x % UpResolution == 0) {
+				TriangleCompute tri1;
+				tri1.A = VectorIndex;
+				tri1.B = VectorIndex + (UpResolution / 2) + VertRes;
+				tri1.C = VectorIndex + VertRes;
+				triangleBufferList.Append(tri1);
+
+				TriangleCompute tri2;
+				tri2.A = VectorIndex;
+				tri2.B = VectorIndex + UpResolution;
+				tri2.C = VectorIndex + (UpResolution / 2) + VertRes;
+				triangleBufferList.Append(tri2);
+
+				TriangleCompute tri3;
+				tri3.A = VectorIndex + UpResolution;
+				tri3.B = VectorIndex + UpResolution + VertRes;
+				tri3.C = VectorIndex + (UpResolution / 2) + VertRes;
+				triangleBufferList.Append(tri3);
+			}
+			
+			CreateDefaultTris = false;
+		}
+		else if(y==VertRes-2 && DownResolution!=1) {
+			if (x % DownResolution == 0) {
+				TriangleCompute tri1;
+				tri1.A = VectorIndex;
+				tri1.B = VectorIndex + (DownResolution / 2);
+				tri1.C = VectorIndex + VertRes;
+				triangleBufferList.Append(tri1);
+
+				TriangleCompute tri2;
+				tri2.A = VectorIndex + (DownResolution / 2);
+				tri2.B = VectorIndex + (DownResolution);
+				tri2.C = VectorIndex + (DownResolution) + VertRes;
+				triangleBufferList.Append(tri2);
+
+				TriangleCompute tri3;
+				tri3.A = VectorIndex + VertRes;
+				tri3.B = VectorIndex + (DownResolution / 2);
+				tri3.C = VectorIndex + (DownResolution) + VertRes;
+				triangleBufferList.Append(tri3);
+			}
+
+			CreateDefaultTris = false;
+		}
+		
+		//if (CreateDefaultTris) {
+			TriangleCompute tri1;
+			tri1.A = VectorIndex;
+			tri1.B = VectorIndex + 1 + VertRes;
+			tri1.C = VectorIndex + VertRes;
+			triangleBufferList.Append(tri1);
+
+			TriangleCompute tri2;
+			tri2.A = VectorIndex;
+			tri2.B = VectorIndex + 1;
+			tri2.C = VectorIndex + VertRes + 1;
+			triangleBufferList.Append(tri2);
+		//}
+		
+	}
+
+}
