@@ -30,7 +30,7 @@ public delegate bool PlanetoidTreeForEachUpdate(PlanetoidQuadTree Tree, int Inde
 public class PlanetoidTreeManager
 {
     private PlanetoidQuadTree[] Roots;
-    private PlanetoidSizeSetting SizeSetting;
+    public PlanetoidSizeSetting SizeSetting;
 
     private List<PlanetoidQuadTree> CreateList;
     private List<PlanetoidQuadTree> UpdateList;
@@ -78,7 +78,7 @@ public class PlanetoidTreeManager
         ValidateTreeDepth(Tree);
 
         FaceToFaceMap InitMap = new FaceToFaceMap(Tree.Face, CenterOffset);
-        FaceToFaceMap Mapped = FaceToFaceMapper(InitMap);
+        FaceToFaceMap Mapped = FaceToFaceMapper(InitMap,SizeSetting.MaxEdgeTiles);
 
         PlanetoidQuadTree MappedTree =  CreateMaxLeafAtFaceAndLocation(Mapped.Face, Mapped.Point);
         if(MappedTree==null)
@@ -272,6 +272,14 @@ public class PlanetoidTreeManager
             Tree.Resolution = SizeSetting.MaxResolution;
         });
     }
+
+    public void SetResolutionToBeSize()
+    {
+        AllTrees.ForEach((PlanetoidQuadTree Tree) => {
+            Tree.Resolution = Tree.Size;
+        });
+    }
+
     public void SetResolution(int Resolution)
     {
         AllTrees.ForEach((PlanetoidQuadTree Tree) => {
@@ -285,9 +293,9 @@ public class PlanetoidTreeManager
         return null;
     }
 
-    private FaceToFaceMap FaceToFaceMapper(FaceToFaceMap Map)
+    public static FaceToFaceMap FaceToFaceMapper(FaceToFaceMap Map, float MaxEdge)
     {
-        float Edge = SizeSetting.MaxEdgeTiles;
+        float Edge = MaxEdge;
 
         float _X = Map.Point.x;
         float _Y = Map.Point.y;

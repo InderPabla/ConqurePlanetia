@@ -46,13 +46,47 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   PlanetoidChunkPrefab: {fileID: 2582068673568886831, guid: 4d657daa30f3f924582356df3967e376,
     type: 3}
-  RadiusSpherePrefab: {fileID: 6790621049304707657, guid: b940df2d5b0a7b743af1a66e7a2ccb96,
+  RadiusSpherePrefab: {fileID: -4707792659650547896, guid: b940df2d5b0a7b743af1a66e7a2ccb96,
     type: 3}
   MeshCompute: {fileID: 7200000, guid: bc663ecdb05e68e48aecfa3ad15f71b0, type: 3}
+  ColorGradient:
+    serializedVersion: 2
+    key0: {r: 1, g: 1, b: 1, a: 1}
+    key1: {r: 1, g: 1, b: 1, a: 1}
+    key2: {r: 0, g: 0, b: 0, a: 0}
+    key3: {r: 0, g: 0, b: 0, a: 0}
+    key4: {r: 0, g: 0, b: 0, a: 0}
+    key5: {r: 0, g: 0, b: 0, a: 0}
+    key6: {r: 0, g: 0, b: 0, a: 0}
+    key7: {r: 0, g: 0, b: 0, a: 0}
+    ctime0: 0
+    ctime1: 65535
+    ctime2: 0
+    ctime3: 0
+    ctime4: 0
+    ctime5: 0
+    ctime6: 0
+    ctime7: 0
+    atime0: 0
+    atime1: 65535
+    atime2: 0
+    atime3: 0
+    atime4: 0
+    atime5: 0
+    atime6: 0
+    atime7: 0
+    m_Mode: 0
+    m_NumColorKeys: 2
+    m_NumAlphaKeys: 2
   SizeSetting:
     EdgePower: 9
     PlanetName: TestPlanet1
     MinEdgeTiles: 16
+    MinResolution: 0
+    Position: {x: 0, y: 0, z: 0}
+    PlanetSeed: 0
+    CloudScaler: 0.75
+    NodeScaler: 625
   NoiseSettings:
   - Offset: {x: 1000, y: 1000, z: 1000}
     Seed: 1000
@@ -61,6 +95,10 @@ MonoBehaviour:
     Scale: 1
     Persistence: 1
     Weight: 1
+    MinValue: 0.75
+    Enabled: 0
+    BaseLacunarity: 0
+    StrengthMultiplier: 0
     Effect:
       serializedVersion: 2
       m_Curve: []
@@ -71,6 +109,9 @@ MonoBehaviour:
   IgnoreNoiseSetting: 0
   WireframeMode: 0
   HideRangeShell: 0
+  TreeMesh: {fileID: 4300000, guid: d7ad634caa1c049d49b730cc6d29c683, type: 3}
+  TempCubePrefab: {fileID: 262246466646322755, guid: 91a717cec05392840b136f70ab14e13b,
+    type: 3}
 --- !u!54 &526033045063694404
 Rigidbody:
   m_ObjectHideFlags: 0

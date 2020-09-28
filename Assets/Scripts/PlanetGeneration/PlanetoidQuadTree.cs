@@ -31,7 +31,11 @@ public class PlanetoidQuadTree
 
     private int _Resolution = 1;
 
-    private bool _IsPlayerTree = false;
+    //private bool _IsPlayerTree = false;
+
+    public bool ToCreate = false;
+
+    //private int ImportanceLevel = 100; //0 = Max Importance
 
     private PlanetoidTreeManager Manager;
 
@@ -43,7 +47,7 @@ public class PlanetoidQuadTree
         Size = size;
         LocalId = LocalTreeId.Zero;
         Id = GenLocalIdXY();
-        Resolution = 1;
+        Resolution = Size;
         Manager = manager;
 
         ValidateResolution();
@@ -58,7 +62,7 @@ public class PlanetoidQuadTree
         Size = size;
         LocalId = localId;
         Id = GenLocalIdXY();
-        Resolution = parent.Resolution;
+        Resolution = Size;
         Manager = parent.Manager;
 
         ValidateResolution();
@@ -175,12 +179,12 @@ public class PlanetoidQuadTree
         set
         {
             _Resolution = value;
-            if (_Resolution > Size || _Resolution==Size) _Resolution = Size/2;
+            if (_Resolution > Size || _Resolution==Size) _Resolution = Size;
             ValidateResolution();
         }
     }
 
-    public bool IsPlayerTree
+    /*public bool IsPlayerTree
     {
         get
         {
@@ -190,7 +194,7 @@ public class PlanetoidQuadTree
         {
             _IsPlayerTree = value;
         }
-    }
+    }*/
 
     public Vector2 Center
     {

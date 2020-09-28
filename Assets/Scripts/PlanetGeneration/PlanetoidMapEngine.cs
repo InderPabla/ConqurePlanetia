@@ -5,19 +5,27 @@ using UnityEngine;
 public delegate void PlanetoidOperationUpdateTree(PlanetoidQuadTree Tree);
 public delegate void PlanetoidOperationDeleteTree(PlanetoidQuadTree Tree);
 public delegate void PlanetoidOperationCreateTree(PlanetoidQuadTree Tree);
+public delegate PlanetoidQuadTree PlanetoidOperationCurrentTree(PlanetoidQuadTree Tree);
 public delegate bool PlanetoidOperationTreeIsCreated(PlanetoidQuadTree Tree);
+public delegate void PlanetoidOperationReplaceTree(PlanetoidQuadTree Tree);
 
 public delegate Vector3 PlanetoidOperationWorldSpacePlayerLocation();
 public delegate Vector3 PlanetoidOperationWorldSpacePlanetLocation();
 public delegate PlanetoidQuadTree PlanetoidOperationTreeUnderPlayer();
 
+public delegate RaycastHit PlanetoidOperationRaycastOnPlanet(Vector3 LocalPointOnSphere);
+
 public delegate Vector3 SolutionCubeToSphere(PlanetoidFace Face, float X, float Y);
+public delegate PlanetoidNode SolutionFindNearestNodeToPlayer();
+public delegate List<PlanetoidNode> SolutionFindNearestNodeToPlayerWithinIndexRange(int IndexRange);
 
 public class PlanetoidMapEngineOperation
 {
     public PlanetoidOperationUpdateTree UpdateTree;
     public PlanetoidOperationCreateTree CreateTree;
     public PlanetoidOperationDeleteTree DeleteTree;
+    public PlanetoidOperationCurrentTree CurrentTree;
+    public PlanetoidOperationReplaceTree ReplaceTree;
 
     public PlanetoidOperationWorldSpacePlayerLocation WorldSpacePlayerLocation;
     public PlanetoidOperationWorldSpacePlanetLocation WorldSpacePlanetLocation;
@@ -25,15 +33,20 @@ public class PlanetoidMapEngineOperation
     public PlanetoidOperationTreeIsCreated IsTreeCreated;
 
     public PlanetoidOperationTreeUnderPlayer TreeUnderPlayer;
+    public PlanetoidOperationRaycastOnPlanet RaycastOnPlanet;
 
-    public PlanetoidMapEngineOperation(PlanetoidOperationUpdateTree updateTree,PlanetoidOperationCreateTree createTree,PlanetoidOperationDeleteTree deleteTree
-        ,PlanetoidOperationWorldSpacePlayerLocation worldSpacePlayerLocation,PlanetoidOperationWorldSpacePlanetLocation worldSpacePlanetLocation
-        ,PlanetoidOperationTreeIsCreated isTreeCreated, PlanetoidOperationTreeUnderPlayer treeUnderPlayer
+    public PlanetoidMapEngineOperation(PlanetoidOperationUpdateTree updateTree, PlanetoidOperationCreateTree createTree, PlanetoidOperationDeleteTree deleteTree
+        , PlanetoidOperationReplaceTree replaceTree, PlanetoidOperationCurrentTree currentTree
+        , PlanetoidOperationWorldSpacePlayerLocation worldSpacePlayerLocation, PlanetoidOperationWorldSpacePlanetLocation worldSpacePlanetLocation
+        , PlanetoidOperationTreeIsCreated isTreeCreated, PlanetoidOperationTreeUnderPlayer treeUnderPlayer
+        , PlanetoidOperationRaycastOnPlanet raycastOnPlanet
     )
     {
         UpdateTree = updateTree;
         DeleteTree = deleteTree;
         CreateTree = createTree;
+        CurrentTree = currentTree;
+        ReplaceTree = replaceTree;
 
         WorldSpacePlayerLocation = worldSpacePlayerLocation;
         WorldSpacePlanetLocation = worldSpacePlanetLocation;
@@ -41,50 +54,69 @@ public class PlanetoidMapEngineOperation
         IsTreeCreated = isTreeCreated;
 
         TreeUnderPlayer = treeUnderPlayer;
+        RaycastOnPlanet = raycastOnPlanet;
     }
 }
 
 public class PlanetoidMapEngineSolution
 {
     public SolutionCubeToSphere CubeToSphere;
+    public SolutionFindNearestNodeToPlayer FindNearestNodeToPlayer;
+    public SolutionFindNearestNodeToPlayerWithinIndexRange FindNearestNodeToPlayerWithinIndexRange;
 
-    public PlanetoidMapEngineSolution (SolutionCubeToSphere cubeToSphere) {
+    public PlanetoidMapEngineSolution(SolutionCubeToSphere cubeToSphere, SolutionFindNearestNodeToPlayer findNearestNodeToPlayer,
+            SolutionFindNearestNodeToPlayerWithinIndexRange findNearestNodeToPlayerWithinIndexRange)
+    {
         CubeToSphere = cubeToSphere;
+        FindNearestNodeToPlayer = findNearestNodeToPlayer;
+        FindNearestNodeToPlayerWithinIndexRange = findNearestNodeToPlayerWithinIndexRange;
     }
-    
+
 }
 
-public class PlanetoidMapEngine 
+public class PlanetoidMapEngine
 {
     private PlanetoidSizeSetting SizeSetting;
 
-    private PlanetoidRenderType RenderType;
+    public PlanetoidRenderType RenderType;
 
     private PlanetoidMapEngineOperation Operation;
 
     private PlanetoidTreeManager TreeManager;
 
+    private PlanetoidNodeManager NodeManager;
+
     public PlanetoidMapEngineSolution Solution;
 
-    private PlanetoidQuadTree CurrentPlayerTree;
+    private Vector3 CurrentLocalSpacePlayerLocationOnSphere = Vector3.positiveInfinity;
 
+    private bool CreateImmediate = false;
 
-    public PlanetoidMapEngine(PlanetoidSizeSetting sizeSetting, PlanetoidMapEngineOperation operation)
+    public NoiseGenerator GenNoise;
+    public ChunkMeshGenerator GenMesh;
+
+    public PlanetoidMapEngine(PlanetoidSizeSetting sizeSetting, PlanetoidMapEngineOperation operation, Gradient ColorGradient, SimpleNoiseSetting[] NoiseSettings, bool IgnoreNoiseSetting, ComputeShader MeshCompute)
     {
         SizeSetting = sizeSetting;
         Operation = operation;
         RenderType = PlanetoidRenderType.PLAYER_VERY_FAR;
-        Solution = new PlanetoidMapEngineSolution(this.SolutionCubeToSphere);
+        Solution = new PlanetoidMapEngineSolution(this.SolutionCubeToSphere,this.FindNearestNodeToPlayer,this.FindNearestNodeToPlayerWithinIndexRange);
+
+        GenNoise = new NoiseGenerator(NoiseSettings, Solution, IgnoreNoiseSetting);
+        GenMesh = new ChunkMeshGenerator(SizeSetting, GenNoise, Solution, MeshCompute, ColorGradient);
     }
 
-    public void Update()
+    public bool Update()
     {
-        if(TreeManager==null || TreeManager.IsAllQueueEmpty())
+        bool UpdateOccured = false;
+        if (TreeManager == null || TreeManager.IsAllQueueEmpty())
         {
-            UpdateTreeManager();
+            UpdateOccured = UpdateTreeManager();
         }
 
         UpdateTreeGeneration();
+
+        return UpdateOccured;
     }
 
     private void UpdateTreeGeneration()
@@ -93,8 +125,10 @@ public class PlanetoidMapEngine
         int UpdateEdgeCount = 128;
 
         TreeManager.ForEachCreate((PlanetoidQuadTree Tree, int Index) => {
+            if (Tree.ToCreate == false) throw new System.Exception(string.Format("Attempting to create PlanetoidQuadTree({0}) with ToCreate false.", Tree.Id));
+
             int Count = Tree.Size / Tree.Resolution;
-            if (Count<=CreateEdgeCount)
+            if (Count <= CreateEdgeCount)
             {
                 CreateEdgeCount -= Count;
                 Operation.CreateTree(Tree);
@@ -103,12 +137,41 @@ public class PlanetoidMapEngine
             return false;
         });
 
-        TreeManager.ForEachUpdate((PlanetoidQuadTree Tree, int Index) => {
-            int Count = Tree.Size / Tree.Resolution;
+        TreeManager.ForEachUpdate((PlanetoidQuadTree NewTree, int Index) => {
+            if (NewTree.ToCreate == false) throw new System.Exception(string.Format("Attempting to update PlanetoidQuadTree({0}) with ToCreate false.", NewTree.Id));
+
+            int Count = NewTree.Size / NewTree.Resolution;
             if (Count <= UpdateEdgeCount)
             {
+                PlanetoidQuadTree OldTree = Operation.CurrentTree(NewTree);
+
+                PlanetoidQuadTree UpNew = NewTree.TreeManager.FindNeighbourUp(NewTree);
+                PlanetoidQuadTree DownNew = NewTree.TreeManager.FindNeighbourDown(NewTree);
+                PlanetoidQuadTree LeftNew = NewTree.TreeManager.FindNeighbourLeft(NewTree);
+                PlanetoidQuadTree RightNew = NewTree.TreeManager.FindNeighbourRight(NewTree);
+
+                PlanetoidQuadTree UpOld = OldTree.TreeManager.FindNeighbourUp(OldTree);
+                PlanetoidQuadTree DownOld = OldTree.TreeManager.FindNeighbourDown(OldTree);
+                PlanetoidQuadTree LeftOld = OldTree.TreeManager.FindNeighbourLeft(OldTree);
+                PlanetoidQuadTree RightOld = OldTree.TreeManager.FindNeighbourRight(OldTree);
+
+
+                if (OldTree.Resolution == NewTree.Resolution
+                    && (PlanetoidQuadTree.EqualsWithResolution(UpNew, UpOld)
+                        && PlanetoidQuadTree.EqualsWithResolution(DownNew, DownOld)
+                        && PlanetoidQuadTree.EqualsWithResolution(LeftNew, LeftOld)
+                        && PlanetoidQuadTree.EqualsWithResolution(RightNew, RightOld)
+                       )
+                )
+                {
+                    Operation.ReplaceTree(NewTree);
+                    return true;
+                }
+
+
+
                 UpdateEdgeCount -= Count;
-                Operation.UpdateTree(Tree);
+                Operation.UpdateTree(NewTree);
                 return true;
             }
             return false;
@@ -122,21 +185,26 @@ public class PlanetoidMapEngine
                 return true;
             });
         }
-    
     }
 
-    private void UpdateTreeManager()
+    private bool UpdateTreeManager()
     {
+        bool UpdateOccured = false;
+
         int MaxTreeDepth = SizeSetting.MaxTreeDepth;
         Vector3 WorldSpacePlayerLocation = Operation.WorldSpacePlayerLocation();
         Vector3 WorldSpacePlanetLocation = Operation.WorldSpacePlanetLocation();
         Vector3 Direction = (WorldSpacePlayerLocation - WorldSpacePlanetLocation).normalized;
+        Vector3 LocalSpacePlayerLocationOnSphere = Direction * SizeSetting.Radius;
+        Sphere sphere = SizeSetting.Sphere;
 
-        float DistanceToSurface = Vector3.Distance(WorldSpacePlayerLocation, WorldSpacePlanetLocation) - SizeSetting.Radius;
 
-        if (DistanceToSurface <= 0f) return;
+        float DistanceToSurface = Vector3.Distance(WorldSpacePlayerLocation, WorldSpacePlanetLocation);
 
-        PlanetoidRenderType NewRenderType = SizeSetting.RenderTypeForDistanceToSurface(DistanceToSurface);
+        if (DistanceToSurface <= 0f) return false;
+        
+        PlanetoidRenderType NewRenderType = SizeSetting.RenderTypeForDistanceToSurface(DistanceToSurface-50,GenNoise._MaxNoise);
+ 
         PlanetoidFace FaceUnderPlayer = PlanetoidFace.FindFace(WorldSpacePlayerLocation, WorldSpacePlanetLocation);
 
         PlanetoidRenderType OldRenderType = RenderType;
@@ -148,8 +216,11 @@ public class PlanetoidMapEngine
 
         if (RenderType <= PlanetoidRenderType.PLAYER_ON_PLANET)
         {
+
+            if (sphere.Distance(LocalSpacePlayerLocationOnSphere, CurrentLocalSpacePlayerLocationOnSphere) <= 400f) return false;
+
             PlanetoidTreeManager NewTreeManger = new PlanetoidTreeManager(SizeSetting);
-            NewTreeManger.SetMaxResolution();
+            //NewTreeManger.SetResolutionToBeSize();
 
             PlanetoidQuadTree PlayerTree = null;
             PlayerTreeFromRaycast = null;
@@ -164,30 +235,15 @@ public class PlanetoidMapEngine
             }
 
 
+            DiamondOnTree(PlayerTree, NewTreeManger, 18, SizeSetting.MinResolution, 2);
 
-            DiamondOnTree(PlayerTree, NewTreeManger, 12, SizeSetting.MinResolution, 2);
 
-            if (CurrentPlayerTree != null)
-            {
-                if (PlayerTree.Equals(CurrentPlayerTree)) return;
-
-                if (PlayerTree.Face == CurrentPlayerTree.Face)
-                {
-                    if (Vector2.Distance(PlayerTree.Start, CurrentPlayerTree.Start) <= SizeSetting.MinEdgeTiles * 0.5f)
-                    {
-                        return;
-                    }
-                }
-            }
-
-            Debug.Log((CurrentPlayerTree != null ? CurrentPlayerTree.Id : null) + " " + PlayerTree.Id + " are different. New Tree()");
-
-            CurrentPlayerTree = PlayerTree;
-
-            PlanetoidTreeManager OldTreeManager = TreeManager;
+            CreateImmediate = false;
+            NewTreeManger.CreateMe(TreeManager, DiffAction);
             TreeManager = NewTreeManger;
-            TreeManager.CreateMe(OldTreeManager, DiffAction);
 
+            CurrentLocalSpacePlayerLocationOnSphere = LocalSpacePlayerLocationOnSphere;
+            UpdateOccured = true;
         }
         /*else if (RenderType <= PlanetoidRenderType.PLAYER_VERY_FAR)
         {
@@ -201,17 +257,21 @@ public class PlanetoidMapEngine
         }*/
         else if (OldRenderType != NewRenderType)
         {
-            Debug.Log(OldRenderType + " " + NewRenderType + " are different. Init()");
-            CurrentPlayerTree = null;
+            //Debug.Log(OldRenderType + " " + NewRenderType + " are different. Init()");
+            //CurrentPlayerTree = null;
+
             Init();
+            UpdateOccured = true;
         }
+
+        return UpdateOccured;
     }
 
     private void DiamondOnTree(PlanetoidQuadTree PlayerTree, PlanetoidTreeManager NewTreeManger, int Size, int HighestResolution, int ResMulti)
     {
-
-        PlayerTree.IsPlayerTree = true;
+        //PlayerTree.IsPlayerTree = true;
         PlayerTree.Resolution = HighestResolution;
+        PlayerTree.ToCreate = true;
 
         int Min = -Size;
         int Max = Size;
@@ -222,8 +282,11 @@ public class PlanetoidMapEngine
 
         Circle Res1 = new Circle(Center, Radius / 1f);
         Circle Res2 = new Circle(Center, Radius / 2f);
-        Circle Res3 = new Circle(Center, Radius / 3f);
-       
+        Circle Res3 = new Circle(Center, Radius / 12f);
+
+        int TreeRes1 = HighestResolution * ResMulti * ResMulti * ResMulti * ResMulti;
+        int TreeRes2 = HighestResolution * ResMulti * ResMulti * ResMulti;
+        int TreeRes3 = HighestResolution * ResMulti;
 
         for (int y = Min; y <= Max; y++)
         {
@@ -237,11 +300,15 @@ public class PlanetoidMapEngine
 
                 if (Tree != null)
                 {
+                    Tree.ToCreate = true;
                     if (Res3.ContainsInclusive(UpdatedCenter)) Tree.Resolution = HighestResolution;
-                    else if (Res2.ContainsInclusive(UpdatedCenter)) Tree.Resolution = HighestResolution * ResMulti;
-                    else if (Res1.ContainsInclusive(UpdatedCenter)) Tree.Resolution = HighestResolution * ResMulti * ResMulti;
-
-                    else Tree.Resolution = SizeSetting.MaxResolution;
+                    else if (Res2.ContainsInclusive(UpdatedCenter)) Tree.Resolution = TreeRes3;
+                    else if (Res1.ContainsInclusive(UpdatedCenter)) Tree.Resolution = TreeRes2;
+                    else {
+                        //Tree.Resolution = SizeSetting.MaxResolution;
+                        Tree.Resolution = TreeRes1;
+                       //Tree.ToCreate = false;
+                    }
                 }
             }
         }
@@ -252,185 +319,87 @@ public class PlanetoidMapEngine
         return OnSphereNormalized(OnCube(Face, X, Y, SizeSetting.MaxEdgeTiles));
     }
 
-    public void Init()
+    private PlanetoidNode FindNearestNodeToPlayer()
     {
-        PlanetoidTreeManager NewTreeManger = new PlanetoidTreeManager(SizeSetting);
-        NewTreeManger.SetResolution(SizeSetting.MaxResolution/2);
-        NewTreeManger.CreateMe(TreeManager, DiffAction);
-        TreeManager = NewTreeManger;
+        Vector3 PointOnSphereNorm = (Operation.WorldSpacePlayerLocation() - Operation.WorldSpacePlanetLocation()).normalized;
+        Vector3 PointOnSphere = PointOnSphereNorm * SizeSetting.Radius;
+        return NodeManager.FindNearestNode(PointOnSphere);
     }
 
+    public List<PlanetoidNode> FindNearestNodeToPlayerWithinIndexRange(int IndexRange)
+    {
+        Vector3 PointOnSphereNorm = (Operation.WorldSpacePlayerLocation() - Operation.WorldSpacePlanetLocation()).normalized;
+        Vector3 PointOnSphere = PointOnSphereNorm * SizeSetting.Radius;
 
+        PlanetoidNode NearestNode = FindNearestNodeToPlayer();
+
+        return NodeManager.FindNearestNodesWithinBlockMeters(NearestNode, IndexRange);
+    }
+
+    public void Init()
+    {
+        CurrentLocalSpacePlayerLocationOnSphere = Vector3.positiveInfinity;
+
+        ChunkDataStorage Storage = ChunkDataStorage.GetInstance();
+
+        Storage.StorageDeleteGrassPlanet(SizeSetting.PlanetName);
+        Storage.StorageDeleteChunkDataPlanet(SizeSetting.PlanetName);
+
+        CreateImmediate = true;
+        PlanetoidTreeManager NewTreeManger = new PlanetoidTreeManager(SizeSetting);
+        NewTreeManger.SetResolution(SizeSetting.MaxResolution);
+        NewTreeManger.AllLeafs.ForEach(v => v.ToCreate = true);
+
+        NewTreeManger.CreateMe(TreeManager, DiffAction);
+        TreeManager = NewTreeManger;
+        CreateImmediate = false;
+
+        if(NodeManager==null)
+        {
+            NodeManager = new PlanetoidNodeManager(SizeSetting, Operation);
+            NodeManager.InitNodes();
+        }
+    }
 
     private void DiffAction(PlanetoidTreeManager NewManager, PlanetoidQuadTree Tree, PlanetoidTreeDiffType DiffType)
     {
-        if(DiffType == PlanetoidTreeDiffType.DIFF_NEW)
+        if (DiffType == PlanetoidTreeDiffType.DIFF_NEW)
         {
             if (Operation.IsTreeCreated(Tree))
                 throw new System.Exception(string.Format("Attempting to create PlanetoidQuadTree({0}) which already exists.", Tree.Id));
-            NewManager.AddCreateTree(Tree);
-            //Operation.CreateTree(Tree);
+
+            if (Tree.ToCreate == false) return;
+
+            if (CreateImmediate) Operation.CreateTree(Tree);
+            else NewManager.AddCreateTree(Tree);
         }
         else if (DiffType == PlanetoidTreeDiffType.DIFF_EXISTS)
         {
+            if (Tree.ToCreate == false) return;
+
             if (!Operation.IsTreeCreated(Tree))
-                throw new System.Exception(string.Format("Attempting to update PlanetoidQuadTree({0}) which does not exist.", Tree.Id));
-            NewManager.AddUpdateTree(Tree);
-            //Operation.UpdateTree(Tree);
+            {
+                if (CreateImmediate) Operation.CreateTree(Tree);
+                else NewManager.AddCreateTree(Tree);
+            }
+            else
+            {
+                if (CreateImmediate) Operation.UpdateTree(Tree);
+                else NewManager.AddUpdateTree(Tree);
+            }
+            //if (!Operation.IsTreeCreated(Tree))
+            //throw new System.Exception(string.Format("Attempting to update PlanetoidQuadTree({0}) which does not exist.", Tree.Id));
+
         }
         else if (DiffType == PlanetoidTreeDiffType.DIFF_NOT_EXIST)
         {
-            if (!Operation.IsTreeCreated(Tree))
-                throw new System.Exception(string.Format("Attempting to delete PlanetoidQuadTree({0}) which does not exist.", Tree.Id));
-            NewManager.AddDeleteTree(Tree);
-            //Operation.DeleteTree(Tree);
+            if (!Operation.IsTreeCreated(Tree)) return;
+            //throw new System.Exception(string.Format("Attempting to delete PlanetoidQuadTree({0}) which does not exist.", Tree.Id));
+            if (CreateImmediate) Operation.DeleteTree(Tree);
+            else NewManager.AddDeleteTree(Tree);
         }
     }
 
-    /*public static Vector3 CubifyFromSphereNormalized(Vector3 OnSphere)
-    {
-        Vector3 position = OnSphere;
-        float x, y, z;
-        x = position.x;
-        y = position.y;
-        z = position.z;
-
-        float fx, fy, fz;
-        fx = Mathf.Abs(x);
-        fy = Mathf.Abs(y);
-        fz = Mathf.Abs(z);
-
-        const float inverseSqrt2 = 0.70710676908493042f;
-
-        if (fy >= fx && fy >= fz)
-        {
-            float a2 = x * x * 2.0f;
-            float b2 = z * z * 2.0f;
-            float inner = -a2 + b2 - 3;
-            float innersqrt = -Mathf.Sqrt((inner * inner) - 12.0f * a2);
-
-            if (x == 0.0 || x == -0.0)
-            {
-                position.x = 0.0f;
-            }
-            else
-            {
-                position.x = Mathf.Sqrt(innersqrt + a2 - b2 + 3.0f) * inverseSqrt2;
-            }
-
-            if (z == 0.0 || z == -0.0)
-            {
-                position.z = 0.0f;
-            }
-            else
-            {
-                position.z = Mathf.Sqrt(innersqrt - a2 + b2 + 3.0f) * inverseSqrt2;
-            }
-
-            if (position.x > 1.0) position.x = 1.0f;
-            if (position.z > 1.0) position.z = 1.0f;
-
-            if (x < 0) position.x = -position.x;
-            if (z < 0) position.z = -position.z;
-
-            if (y > 0)
-            {
-                // top face
-                position.y = 1.0f;
-            }
-            else
-            {
-                // bottom face
-                position.y = -1.0f;
-            }
-        }
-        else if (fx >= fy && fx >= fz)
-        {
-            float a2 = y * y * 2.0f;
-            float b2 = z * z * 2.0f;
-            float inner = -a2 + b2 - 3f;
-            float innersqrt = -Mathf.Sqrt((inner * inner) - 12.0f * a2);
-
-            if (y == 0.0f || y == -0.0f)
-            {
-                position.y = 0.0f;
-            }
-            else
-            {
-                position.y = Mathf.Sqrt(innersqrt + a2 - b2 + 3.0f) * inverseSqrt2;
-            }
-
-            if (z == 0.0f || z == -0.0f)
-            {
-                position.z = 0.0f;
-            }
-            else
-            {
-                position.z = Mathf.Sqrt(innersqrt - a2 + b2 + 3.0f) * inverseSqrt2;
-            }
-
-            if (position.y > 1.0f) position.y = 1.0f;
-            if (position.z > 1.0f) position.z = 1.0f;
-
-            if (y < 0) position.y = -position.y;
-            if (z < 0) position.z = -position.z;
-
-            if (x > 0)
-            {
-                // right face
-                position.x = 1.0f;
-            }
-            else
-            {
-                // left face
-                position.x = -1.0f;
-            }
-        }
-        else
-        {
-            float a2 = x * x * 2.0f;
-            float b2 = y * y * 2.0f;
-            float inner = -a2 + b2 - 3;
-            float innersqrt = -Mathf.Sqrt((inner * inner) - 12.0f * a2);
-
-            if (x == 0.0 || x == -0.0)
-            {
-                position.x = 0.0f;
-            }
-            else
-            {
-                position.x = Mathf.Sqrt(innersqrt + a2 - b2 + 3.0f) * inverseSqrt2;
-            }
-
-            if (y == 0.0f || y == -0.0f)
-            {
-                position.y = 0.0f;
-            }
-            else
-            {
-                position.y = Mathf.Sqrt(innersqrt - a2 + b2 + 3.0f) * inverseSqrt2;
-            }
-
-            if (position.x > 1.0) position.x = 1.0f;
-            if (position.y > 1.0) position.y = 1.0f;
-
-            if (x < 0) position.x = -position.x;
-            if (y < 0) position.y = -position.y;
-
-            if (z > 0)
-            {
-                // front face
-                position.z = 1.0f;
-            }
-            else
-            {
-                // back face
-                position.z = -1.0f;
-            }
-        }
-
-        return position;
-    }*/
 
 
     //https://forum.unity.com/threads/get-point-from-equally-mapped-quad-sphere-to-plane-coordinates.721631/
@@ -438,8 +407,6 @@ public class PlanetoidMapEngine
 
     public static Vector3 CubifyFromSphereNormalized(Vector3 OnSphere)
     {
-
-
         Vector3 s = OnSphere;
 
         float x2 = Mathf.Sqrt(Mathf.Abs(s.x));

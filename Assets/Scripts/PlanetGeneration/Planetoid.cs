@@ -1,11 +1,18 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.UI;
+
+
+public enum CoroutineState
+{
+    RUNNING, COMPLETED, STOPPED
+}
 
 public class Planetoid : MonoBehaviour
 {
     public PlanetoidChunk PlanetoidChunkPrefab;
-    public GameObject RadiusSpherePrefab;
+    public PlanetoidRadiusSphere RadiusSpherePrefab;
     public ComputeShader MeshCompute;
 
     public Gradient ColorGradient;
@@ -17,8 +24,7 @@ public class Planetoid : MonoBehaviour
     public bool HideRangeShell = false;
 
     private PlanetoidMapEngine Engine;
-    private NoiseGenerator GenNoise;
-    private MeshGenerator GenMesh;
+
     private PlanetoidPlayer Player;
 
     private Rigidbody RigPlanet;
@@ -28,26 +34,65 @@ public class Planetoid : MonoBehaviour
 
     private GameObject[] RangeShellSphere;
 
-    private List<PlanetoidQuadTree> CreateList;
-    private List<PlanetoidQuadTree> UpdateList;
-    private List<PlanetoidQuadTree> DeleteList;
+    private Material GrassMaterial;
 
-    private bool CreateImmediate = false;
+    private Mesh CircleMesh;
+    public Mesh TreeMesh;
+    private Mesh CubeMesh;
+    private Material CircleMat;
+    private Material CubeMat;
+    private Material TreeMat;
 
+    private Canvas _Canvas;
+
+    public GameObject TempCubePrefab;
+    
+    //private List<List<Matrix4x4>> FirTreeTotalList = new List<List<Matrix4x4>>();
+    private List<Matrix4x4> FirTreeTotalList = new List<Matrix4x4>();
+    private List<List<Matrix4x4>> FirTreeRenderList = new List<List<Matrix4x4>>();
+    private List<List<Matrix4x4>> FirTreeRenderListTemp = new List<List<Matrix4x4>>();
+    private System.Diagnostics.Stopwatch Watch;
+
+
+    private bool QueuedTreeRoutine;
+    private CoroutineState TreeRoutineState = CoroutineState.STOPPED;
 
     public Planetoid()
     {
-        Operations = new PlanetoidMapEngineOperation(UpdateTree, CreateTree,DeleteTree
-            ,WorldSpacePlayerLocation,WorldSpacePlanetLocation
-            ,IsTreeCreated,TreeUnderPlayer);
-
-        CreateList = new List<PlanetoidQuadTree>();
-        UpdateList = new List<PlanetoidQuadTree>();
-        DeleteList = new List<PlanetoidQuadTree>();
+        Operations = new PlanetoidMapEngineOperation(UpdateTree, CreateTree,DeleteTree, ReplaceTree, CurrentTree
+            , WorldSpacePlayerLocation,WorldSpacePlanetLocation
+            ,IsTreeCreated,TreeUnderPlayer,RaycastOnPlanet);
+        Watch = new System.Diagnostics.Stopwatch();
+        Watch.Start();
     }
 
-
     void Start()
+    {
+        name = SizeSetting.PlanetName;
+        Player = FindObjectOfType<PlanetoidPlayer>();
+        RigPlanet = GetComponent<Rigidbody>();
+        _Canvas = GameObject.Find("Canvas").GetComponent<Canvas>();
+        Init();
+    
+    }
+
+    private void Init()
+    {
+        InitProperties();
+
+        RigPlanet.mass = SizeSetting.Mass;
+
+        Debug.Log(SizeSetting.ToString());
+
+        Engine = new PlanetoidMapEngine(SizeSetting, Operations, ColorGradient, NoiseSettings, IgnoreNoiseSetting, MeshCompute);
+        InitMaterials();
+        Engine.Init();
+
+        //InitRaycastObjectsOnSurface();
+        if (!HideRangeShell) InitAtmosphereSphere();
+    }
+
+    private void InitProperties()
     {
         SizeSetting.Position = transform.position;
 
@@ -55,7 +100,8 @@ public class Planetoid : MonoBehaviour
 
         System.Random Rand = new System.Random(SizeSetting.Seed);
 
-        GradientColorKey[] colorKeys = new GradientColorKey[UnityEngine.Random.Range(3, 9)];
+        int numberOfColors = (int)(Rand.NextDouble() * (9 - 3) + 3);
+        GradientColorKey[] colorKeys = new GradientColorKey[numberOfColors];
         GradientAlphaKey[] alphaKeys = new GradientAlphaKey[2];
 
         for (int i = 0; i < colorKeys.Length; i++)
@@ -64,11 +110,15 @@ public class Planetoid : MonoBehaviour
 
             float time = 0;
 
-            if(i>0)
+            if (i > 0)
             {
-                if(i==1)
+                if (i == 1)
                 {
                     time = 0.25f * rand;
+                }
+                else if (i==colorKeys.Length-1)
+                {
+                    time = 1f;
                 }
                 else
                 {
@@ -76,8 +126,8 @@ public class Planetoid : MonoBehaviour
                 }
             }
 
-            Color color = Color.HSVToRGB((float)Rand.NextDouble(), (float)Rand.NextDouble() * 0.1f + 0.9f, (float)Rand.NextDouble() * 0.1f + 0.9f);
-            colorKeys[i] = new GradientColorKey(color,time);
+            Color color = Color.HSVToRGB((float)Rand.NextDouble(), (float)Rand.NextDouble() * 0.15f + 0.85f, (float)Rand.NextDouble() * 0.15f + 0.85f);
+            colorKeys[i] = new GradientColorKey(color, time);
         }
 
         for (int i = 0; i < alphaKeys.Length; i++)
@@ -88,88 +138,56 @@ public class Planetoid : MonoBehaviour
 
         ColorGradient.SetKeys(colorKeys, alphaKeys);
         ColorGradient.mode = GradientMode.Blend;
-        
-        name = SizeSetting.PlanetName;
-        Player = FindObjectOfType<PlanetoidPlayer>();
-        
-        RigPlanet = GetComponent<Rigidbody>();
-
-        CreateImmediate = true;
-        Init();
-        CreateImmediate = false;
-
-       
     }
 
-    private void Init()
+    private void InitMaterials()
     {
-        RigPlanet.mass = SizeSetting.Mass;
+        Material BaseGrassMaterial = Resources.Load<Material>("BaseGrassColor");
+        GrassMaterial = new Material(Shader.Find("Shader Graphs/GrassShader2"));
+        GrassMaterial.CopyPropertiesFromMaterial(BaseGrassMaterial);
+        GrassMaterial.SetFloat("_maxHeight", Engine.GenNoise._MaxNoise);
+        GrassMaterial.SetFloat("_radius", SizeSetting.Radius);
+        GrassMaterial.SetVector("_planetLocation", transform.position);
+        GrassMaterial.SetColor("_startPlanetColor", ColorGradient.colorKeys[0].color);
+        GrassMaterial.SetColor("_endPlanetColor", ColorGradient.colorKeys[ColorGradient.colorKeys.Length - 1].color);
+        GrassMaterial.SetVector("_playerLocation", Player.transform.position);
 
-        Debug.Log(SizeSetting.ToString());
+        CircleMesh = PrimitiveMeshGenerator.GenerateCircleMesh(64);
+        CircleMat = new Material(Shader.Find("Lightweight Render Pipeline/Unlit"));
+        CircleMat.SetColor("_BaseColor", ColorGradient.colorKeys[0].color);
 
-        Engine = new PlanetoidMapEngine(SizeSetting, Operations);
+        CircleMat = new Material(Shader.Find("Lightweight Render Pipeline/Unlit"));
+        CircleMat.SetColor("_BaseColor", ColorGradient.colorKeys[0].color);
 
-        GenNoise = new NoiseGenerator(NoiseSettings, Engine.Solution, IgnoreNoiseSetting);
-        GenMesh = new MeshGenerator(SizeSetting, GenNoise, Engine.Solution,MeshCompute, ColorGradient);
-        Engine.Init();
+        CubeMesh = PrimitiveMeshGenerator.GenerateCubeMesh();
+        CubeMat = new Material(Shader.Find("Lightweight Render Pipeline/Simple Lit"));
+        CubeMat.SetColor("_BaseColor", Color.cyan);
+        CubeMat.enableInstancing = true;
 
-        InitRaycastObjectsOnSurface();
-
-        //InitRangeShellSphere();
-        if (!HideRangeShell) InitAtmosphereSphere();
+        Material BaseTreeMaterial = Resources.Load<Material>("TreeMat");
+        TreeMat = new Material(Shader.Find(BaseTreeMaterial.shader.name));
+        TreeMat.CopyPropertiesFromMaterial(BaseTreeMaterial);
+        TreeMat.SetColor("_BaseColor", ColorGradient.colorKeys[0].color);
     }
 
-    private void InitRaycastObjectsOnSurface()
+    private RaycastHit RaycastOnPlanet(Vector3 LocalPointOnSphere)
     {
-        float Radius = SizeSetting.Radius;
-        float Circumference = SizeSetting.Circumference;
-        float RadiansPerMeter = SizeSetting.RadiansPerMeter;
-
-        Vector3 PlanetCenter = WorldSpacePlanetLocation();
-        Vector3 AboveRadius = new Vector3(SizeSetting.Radius, 0,0);
-
-        for (int i = 0; i < 160; i++)
+        Vector3 PlanetCenter = transform.position;
+        Vector3 DirectionToPlanet = (Vector3.zero - LocalPointOnSphere).normalized;
+        Vector3 DirectionFromPlanet = LocalPointOnSphere.normalized;
+        RaycastHit Hit;
+        int IgnoreLayer = ~(1 << LayerMask.NameToLayer("PlayerMask"));
+        int SelectionLayer = 1 << LayerMask.NameToLayer("PlanetoidChunkMask");
+        Vector3 Origin = (DirectionFromPlanet * (SizeSetting.Radius + 5f + Engine.GenNoise._MaxNoise)) + PlanetCenter;
+        if (Physics.Raycast(Origin, DirectionToPlanet, out Hit, Engine.GenNoise._MaxNoise+100f, SelectionLayer))
         {
-            float RadiansPerMeterUpdate = i * RadiansPerMeter;
-            float Xupdate = Radius * Mathf.Cos(RadiansPerMeterUpdate);
-            float Yupdate = Radius * Mathf.Sin(RadiansPerMeterUpdate);
-
-            Vector3 UpdatedLocationOnSphere = AboveRadius;
-            UpdatedLocationOnSphere.x = Xupdate;
-            UpdatedLocationOnSphere.y = Yupdate;
-
-            Vector3 DirectionToPlanet = (Vector3.zero-UpdatedLocationOnSphere).normalized;
-            Vector3 DirectionFromPlanet = UpdatedLocationOnSphere.normalized;
-            //Vector3 UpdatedLocationOnGeom = UpdatedLocationOnSphere + PlanetCenter;
-
-            RaycastHit Hit;
-            int IgnoreLayer = ~(1 << LayerMask.NameToLayer("PlayerMask"));
-            int SelectionLayer = 1 << LayerMask.NameToLayer("PlanetoidChunkMask");
-
-            if (Physics.Raycast((DirectionFromPlanet * (SizeSetting.Radius+100+GenNoise._MaxNoise))+ PlanetCenter, DirectionToPlanet, out Hit, 1000f, IgnoreLayer | SelectionLayer))
+            if (Hit.collider.transform.GetComponent<PlanetoidChunk>() == null)
             {
-                if (Hit.collider.transform.GetComponent<PlanetoidChunk>() != null)
-                {
-                    GameObject obj = GameObject.CreatePrimitive(PrimitiveType.Cube);
-                    obj.transform.position = Hit.point;
-
-                    Vector3 AxisA = new Vector3(DirectionToPlanet.y, DirectionToPlanet.z, DirectionToPlanet.x);
-                    Vector3 AxisB = Vector3.Cross(DirectionToPlanet, AxisA);
-
-                    Quaternion LookRotation = Quaternion.LookRotation(AxisB, DirectionToPlanet);
-                    obj.transform.rotation = LookRotation;
-                    obj.transform.position -= DirectionToPlanet;
-                    obj.name = "Cube" + (i+1);
-                    obj.transform.parent = transform;
-                }
+                throw new System.Exception(string.Format("Raycast at origin {0} hit objected ${1}, which is not a PlanetoidChunk", Origin,Hit.collider.name));
             }
-
-            
-
-
-            
-            
         }
+
+        return Hit;
     }
 
     private void InitRangeShellSphere()
@@ -185,40 +203,49 @@ public class Planetoid : MonoBehaviour
             Color color = Color.HSVToRGB((float)i / (float)PlanetoidRenderType.PLAYER_VERY_FAR, 1f, 1f);
             color.a = 0.1f;
 
-            float Diameter = PlanetoidSizeSetting.RenderTypeDiameter((PlanetoidRenderType)i, Radius)*2;
+            float Diameter = PlanetoidSizeSetting.RenderTypeRadius((PlanetoidRenderType)i, Radius, Engine.GenNoise._MaxNoise) *2f;
 
-            RangeShellSphere[i] = GenerateRangeSphere(color, Diameter, ParentSphere.transform);
+            RangeShellSphere[i] = GenerateRangeSphere(color, Diameter, ParentSphere.transform,false, 0f);
+
         }
 ;   }
 
     private void InitAtmosphereSphere()
     {
-        int numberOfSpheres = UnityEngine.Random.Range(15, 25);
-        float DistanceIncrease = UnityEngine.Random.Range(12, 15);
+        System.Random Rand = new System.Random(SizeSetting.Seed);
+
+        int numberOfSpheres = 20;
+        //(int)(Rand.NextDouble() * (25 - 15) + 15);
+        float DistanceIncrease = (float)(Rand.NextDouble() * (15f - 12f) + 12f)*SizeSetting.CloudScaler;
         RangeShellSphere = new GameObject[numberOfSpheres];
         float Radius = SizeSetting.Radius;
-        float Diameter = PlanetoidSizeSetting.RenderTypeDiameter(PlanetoidRenderType.PLAYER_ON_PLANET, Radius) * 2.5f;
-        float Bias = UnityEngine.Random.Range(0f, 1f);
+        float Diameter = PlanetoidSizeSetting.RenderTypeRadius(PlanetoidRenderType.PLAYER_ON_PLANET, Radius, Engine.GenNoise._MaxNoise) * 2f;
+        //float Bias = (float)Rand.NextDouble();
+
         GameObject ParentSphere = new GameObject();
         ParentSphere.name = "RangeSpheres";
         ParentSphere.transform.position = transform.position;
         ParentSphere.transform.parent = transform;
+       
+
         for (int i = 0; i < numberOfSpheres; i++)
         {
-            float hue = (UnityEngine.Random.Range(0f, 1f) + Bias) * Bias;
+            //float hue = ((float)Rand.NextDouble() + Bias);// * Bias;
+            float hue = ((float)Rand.NextDouble());// * Bias;
             Color color = Color.HSVToRGB(hue > 1f? 1f: hue, 1f,1f);
-            color.a = UnityEngine.Random.Range(0.04f,0.1f);
+            color.a = (float)Rand.NextDouble() * (0.1f - 0.04f) + 0.04f;
             float DiameterForSphere = Diameter + (DistanceIncrease * i);
-
-            RangeShellSphere[i] = GenerateRangeSphere(color, DiameterForSphere, ParentSphere.transform);
+            bool InverTrangles = Rand.NextDouble() > 0.75f;
+            float RotationTimeScale = ((float)Rand.NextDouble() * 0.1f) + 0.01f;
+            RangeShellSphere[i] = GenerateRangeSphere(color, DiameterForSphere, ParentSphere.transform, InverTrangles, RotationTimeScale);
         }
 ;
     }
 
-    private GameObject GenerateRangeSphere(Color color, float Diameter, Transform Parent)
+    private GameObject GenerateRangeSphere(Color color, float Diameter, Transform Parent, bool InvertTriangles, float rotationTimeScale)
     {
 
-        GameObject RangeShellSphere = Instantiate(RadiusSpherePrefab);
+        GameObject RangeShellSphere = Instantiate(RadiusSpherePrefab.gameObject);
         RangeShellSphere.transform.localScale = new Vector3(Diameter, Diameter, Diameter);
         RangeShellSphere.transform.position = transform.position;
         Destroy(RangeShellSphere.GetComponent<SphereCollider>());
@@ -228,7 +255,7 @@ public class Planetoid : MonoBehaviour
         Ren.receiveShadows = false;
         Ren.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
 
-        Material Mat = new Material(Shader.Find("Lightweight Render Pipeline/Simple Lit"));
+        /*Material Mat = new Material(Shader.Find("Lightweight Render Pipeline/Simple Lit"));
         Mat.SetColor("_BaseColor", color);
         // wallMaterial.SetFloat("_Surface", (float)SurfaceType.Opaque);
         Mat.SetFloat("_Surface", 1f);
@@ -238,12 +265,21 @@ public class Planetoid : MonoBehaviour
         Mat.SetInt("_ZWrite", 0);
         Mat.DisableKeyword("_ALPHAPREMULTIPLY_ON");
         Mat.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent;
-        Mat.SetShaderPassEnabled("ShadowCaster", false);
+        Mat.SetShaderPassEnabled("ShadowCaster", false);*/
 
+        Material Mat = new Material(Shader.Find("Shader Graphs/CloudSphereShader"));
+        Mat.SetColor("_sphereColor", color);
+        Mat.SetVector("_planetLocation", transform.position);
+        Mat.SetFloat("_min", -6);
+        Mat.SetFloat("_max", 6);
+        Mat.SetFloat("_rotationTimeScale", rotationTimeScale);
         Ren.material = Mat;
 
         RangeShellSphere.name = name + "-RangeSphere-" + (int)Diameter + "m";
         RangeShellSphere.transform.parent = Parent;
+
+        PlanetoidRadiusSphere PlanetoidRangeSphere = RangeShellSphere.GetComponent<PlanetoidRadiusSphere>();
+        if(InvertTriangles) PlanetoidRangeSphere.InvertTriangles();
 
         return RangeShellSphere;
     }
@@ -251,10 +287,153 @@ public class Planetoid : MonoBehaviour
 
     void Update()
     {
-        Engine.Update();
+        Vector3 PlanetWorldPosition = transform.position;
+        Vector3 PlayerWorldPosition = Player.transform.position;
+        Vector3 ViewportPoint = Camera.main.WorldToViewportPoint(PlanetWorldPosition);
+        Vector3 ScreenPoint = Camera.main.WorldToScreenPoint(PlanetWorldPosition);
+        Vector3 ScreenDim = new Vector3(Screen.width, Screen.height, 0);
+
+        bool UpdateOccured = Engine.Update();
+        GrassMaterial.SetVector("_playerLocation", Player.transform.position);
+
+
+        //transform.rotation = transform.rotation * Quaternion.Euler(0.01f,0.01f,0.01f);
+
+
+
+        //Debug.Log(ScreenPoint.x+","+ ScreenPoint.y+" - " +name);
+        //GameObject spinnerObj = GameObject.Find("Planetoid8km_Spinner1");
+        //RectTransform spinnerRect = spinnerObj.GetComponent<RectTransform>();
+        //RectTransform cannvasRect = spinnerRect.parent.GetComponent<RectTransform>();
+        //spinnerRect.position = (ScreenPoint ) - new Vector3(0,0, ScreenPoint.z);
+        //spinnerRect.position = new Vector3();
+        //spinnerRect.position = ScreenPoint;
+        //Debug.Log(obj!=null);
+
+
+        /*float Magnitude = Vector3.Distance(Player.transform.position, transform.position);
+
+        Vector3 DirToPlayer = (Player.transform.position-transform.position).normalized;
+        Vector3 AxisA = new Vector3(DirToPlayer.y, DirToPlayer.z, DirToPlayer.x);
+        Vector3 AxisB = Vector3.Cross(DirToPlayer, AxisA);
+        
+        Vector3 Scale = Vector3.one * (SizeSetting.Radius + Engine.GenNoise._MaxNoise + (Magnitude*0.001f));
+        Quaternion Rotation = Quaternion.LookRotation(AxisB, DirToPlayer);
+        Matrix4x4 Matrix = Matrix4x4.TRS(transform.position, Rotation, Scale);
+        Graphics.DrawMesh(CircleMesh, Matrix, CircleMat, 0, null, 0, null, false, false, false);*/
+
+
+
+        if (Engine.RenderType <= PlanetoidRenderType.PLAYER_CLOSE)
+        {
+            if (UpdateOccured)
+            {
+                Debug.Log(SizeSetting.PlanetName + " Update Occured.");
+                QueuedTreeRoutine = true;
+            }
+
+            long CurrentTick = Watch.ElapsedTicks;
+            if (TreeRoutineState == CoroutineState.COMPLETED)
+            {
+                TreeRoutineState = CoroutineState.STOPPED;
+                //Debug.Log(SizeSetting.PlanetName + " Tree Routine Stopped at ticks: " + CurrentTick);
+                //int TotalCreatedSoFar = ((FirTreeRenderListTemp.Count - 1) * 1023) + FirTreeRenderListTemp[FirTreeRenderListTemp.Count - 1].Count;
+                StopCoroutine("TreeFinderCoroutine");
+                FirTreeRenderList = FirTreeRenderListTemp;
+                FirTreeRenderListTemp = new List<List<Matrix4x4>>();
+            }
+            else if (QueuedTreeRoutine == true && TreeRoutineState == CoroutineState.STOPPED)
+            {
+                //Debug.Log(SizeSetting.PlanetName + "Tree Routine Started at ticks: " + CurrentTick);
+                TreeRoutineState = CoroutineState.RUNNING;
+                QueuedTreeRoutine = false;
+                FirTreeRenderListTemp = new List<List<Matrix4x4>>();
+                StartCoroutine("TreeFinderCoroutine");
+            }
+
+            foreach (List<Matrix4x4> FirTreeList in FirTreeRenderList)
+            {
+                if (FirTreeList.Count > 0)
+                {
+                    Graphics.DrawMeshInstanced(TreeMesh, 0, TreeMat, FirTreeList, null, UnityEngine.Rendering.ShadowCastingMode.On, false);
+                }
+            }
+        }
+        else
+        {
+            TreeRoutineState = CoroutineState.STOPPED;
+        }
     }
 
- 
+
+    //https://math.stackexchange.com/questions/268064/move-a-point-up-and-down-along-a-sphere
+    //https://keisan.casio.com/exec/system/1359534351
+    //https://math.libretexts.org/Bookshelves/Calculus/Book%3A_Calculus_(OpenStax)/12%3A_Vectors_in_Space/12.7%3A_Cylindrical_and_Spherical_Coordinates#:~:text=To%20convert%20a%20point%20from,y2%2Bz2).
+    //https://math.stackexchange.com/questions/386476/mapping-random-points-on-a-sphere-onto-a-uniform-grid
+    //https://math.stackexchange.com/questions/175805/moving-points-along-a-curve-on-sphere
+    //https://stackoverflow.com/questions/26453951/rotateing-vector-on-plane-in-3d
+    //https://www.gamedev.net/forums/topic/681795-moving-a-point-around-a-sphere/5308724/
+    //https://mathinsight.org/spherical_coordinates  (cool visual)
+    IEnumerator TreeFinderCoroutine()
+    {
+        int TreesToRenderCount = 0;
+        Vector3 PlayerWorldPosition = Player.transform.position;
+        Vector3 PlanetWorldPosition = transform.position;
+        PlanetoidNode NearestNode = Engine.Solution.FindNearestNodeToPlayer();
+        Debug.Log(SizeSetting.PlanetName+" "+NearestNode.LongLatPoint);
+        List<PlanetoidNode> NearestNodes = Engine.Solution.FindNearestNodeToPlayerWithinIndexRange(15);
+        //List<PlanetoidNode> NearestNodes = new List<PlanetoidNode>();
+        //NearestNodes.Add(NearestNode);
+
+        int EndIndex = 0;
+        int StartIndex = 0;
+
+        while (StartIndex <= NearestNodes.Count - 1)
+        {
+            EndIndex = EndIndex + 256;
+            EndIndex = EndIndex >= NearestNodes.Count ? NearestNodes.Count - 1 : EndIndex;
+
+            for (int i = StartIndex; i <= EndIndex; i++)
+            {
+                PlanetoidNode Node = NearestNodes[i];
+
+                RaycastHit Hit = RaycastOnPlanet(Node.LocalSpacePoint);
+
+
+                Vector3 Normal = Node.InitialHitNormal;
+                Vector3 AxisA = new Vector3(Normal.y, Normal.z, Normal.x);
+                Vector3 AxisB = Vector3.Cross(Normal, AxisA);
+                //Rotation Towards = LookTowards(World Up, World Forward) * TurnOnAxis(TrunDegrees,Local Direction To Turn Defrees On)
+                Quaternion LookRotation = Quaternion.LookRotation(AxisB, Normal) * Quaternion.AngleAxis(135, Vector3.up);
+                Vector3 TargetUp = LookRotation * Vector3.up;
+                Vector3 Position = Hit.collider? Hit.point:Node.InitialLocalSpaceHitPoint + PlanetWorldPosition;
+                Vector3 Scale = Vector3.one * 4f;
+                //if (Node.LongLatPoint.LongXIndex == NearestNode.LongLatPoint.LongXIndex && Node.LongLatPoint.LatYIndex == NearestNode.LongLatPoint.LatYIndex)
+                    //Scale *= 3f;
+                Position -= TargetUp * Scale.y * 0.1f;
+
+                Matrix4x4 Matrix = Matrix4x4.TRS(Position,LookRotation,Scale);
+
+                if (FirTreeRenderListTemp.Count == 0 || FirTreeRenderListTemp[FirTreeRenderListTemp.Count - 1].Count == 1023)
+                {
+                    FirTreeRenderListTemp.Add(new List<Matrix4x4>());
+                }
+                FirTreeRenderListTemp[FirTreeRenderListTemp.Count - 1].Add(Matrix);
+                TreesToRenderCount++;
+            }
+
+            StartIndex = EndIndex+1;
+
+            yield return new WaitForSeconds(0.15f);
+        }
+
+        Debug.Log("===========>"+NearestNodes.Count + ","+ TreesToRenderCount+"=====" + SizeSetting.PlanetName + ","+ FirTreeRenderListTemp.Count);
+        TreeRoutineState = CoroutineState.COMPLETED;
+        yield break;
+    }
+
+
+
 
     void FixedUpdate()
     {
@@ -265,89 +444,45 @@ public class Planetoid : MonoBehaviour
             Vector3 otherPos = Player.RigPlayer.transform.position;
             Vector3 direction = Vector3.Normalize(otherPos - transform.position);
             float distance = Vector3.Distance(transform.position, otherPos);
-
-            /*Vector3 PlanetLocation = WorldSpacePlanetLocation();
-            Vector3 PlayerLocation = WorldSpacePlayerLocation();
-            RaycastHit Hit;
-            int IgnoreLayer = ~(1 << LayerMask.NameToLayer("PlayerMask"));
-            int SelectionLayer = 1 << LayerMask.NameToLayer("PlanetoidChunkMask");
-            if (Physics.Raycast(PlayerLocation, Direction, out Hit, 1000f, IgnoreLayer | SelectionLayer))
-            {
-                if (Hit.collider.transform.GetComponent<PlanetoidChunk>() != null)
-                {
-                    distance = Hit.distance;
-                }
-            }*/
-
             float force = (GRAVITY_CONST * RigPlanet.mass * otherMass) / Mathf.Pow(distance, 2);
-
             Vector3 forceVector = (direction * force) * Time.fixedDeltaTime;
             Player.RigPlayer.AddForce(-forceVector);
-
         }
     }
 
     public void UpdateTree(PlanetoidQuadTree Tree)
     {
-        /*PlanetoidChunk Chunk = ChunkFromId(NewTree.Id);
-        PlanetoidQuadTree OldTree = Chunk.Tree;
-
-        PlanetoidQuadTree UpNew = NewTree.TreeManager.FindNeighbourUp(NewTree);
-        PlanetoidQuadTree DownNew = NewTree.TreeManager.FindNeighbourDown(NewTree);
-        PlanetoidQuadTree LeftNew = NewTree.TreeManager.FindNeighbourLeft(NewTree);
-        PlanetoidQuadTree RightNew = NewTree.TreeManager.FindNeighbourRight(NewTree);
-
-        PlanetoidQuadTree UpOld = OldTree.TreeManager.FindNeighbourUp(OldTree);
-        PlanetoidQuadTree DownOld = OldTree.TreeManager.FindNeighbourDown(OldTree);
-        PlanetoidQuadTree LeftOld = OldTree.TreeManager.FindNeighbourLeft(OldTree);
-        PlanetoidQuadTree RightOld = OldTree.TreeManager.FindNeighbourRight(OldTree);
-
-        //if (NewTree.Id.Equals("UP_FACE-00-00-10-01-10"))
-        //{
-           // Debug.Log("UPDATING "+"UP_FACE-00-00-10-01-10");
-           // Debug.Log(NewTree + " " + OldTree);
-           // Debug.Log(UpNew+" "+UpOld);
-          //  Debug.Log(DownNew + " " + DownOld);
-           // Debug.Log(LeftNew + " " + LeftOld);
-            //Debug.Log(RightNew + " " + RightOld);
-            
-        //}
-
-        if (OldTree.Resolution == NewTree.Resolution
-            && (   PlanetoidQuadTree.EqualsWithResolution(UpNew, UpOld)
-                && PlanetoidQuadTree.EqualsWithResolution(DownNew, DownOld)
-                && PlanetoidQuadTree.EqualsWithResolution(LeftNew, LeftOld)
-                && PlanetoidQuadTree.EqualsWithResolution(RightNew, RightOld)
-               )
-        ) {
-            Chunk.Tree = NewTree;
-            return false;
-        }*/
-
         DeleteTree(Tree);
         CreateTree(Tree);
-  
         //Debug.Log(NewTree.Id + " Updated.");
     }
 
     public void CreateTree(PlanetoidQuadTree Tree)
     {
-        PlanetoidChunk NewChunk = Instantiate(PlanetoidChunkPrefab, transform.position, Quaternion.identity);
+        PlanetoidChunk NewChunk = Instantiate(PlanetoidChunkPrefab, transform.position, transform.rotation);
         NewChunk.transform.parent = transform;
         NewChunk.name = Tree.Id;
-
-        //Mesh NewMesh = DEBUG_UseCompute?GenMesh.GenerateMeshComputeShader(Tree):GenMesh.GenerateMeshManual(Tree);
-        MeshGeneratorData MeshData = GenMesh.GenerateMeshComputeShader(Tree);
-
-        NewChunk.Instantiate(this, MeshData, Tree);
-
+        ChunkData MeshData = Engine.GenMesh.GenerateMesh(Tree);
+        NewChunk.Instantiate(this, MeshData, Tree, GrassMaterial);
         //Debug.Log(Tree.Id+" Created.");
+    }
+
+    public PlanetoidQuadTree CurrentTree(PlanetoidQuadTree Tree)
+    {
+        PlanetoidChunk Chunk = ChunkFromId(Tree.Id);
+        return Chunk.Tree;
     }
 
     public void DeleteTree(PlanetoidQuadTree Tree)
     {
         DeleteTreeById(Tree.Id);
         //Debug.Log(Tree.Id + " Destoyed.");
+    }
+
+    public void ReplaceTree(PlanetoidQuadTree Tree)
+    {
+        PlanetoidChunk Chunk = ChunkFromId(Tree.Id);
+        Chunk.Tree = Tree;
     }
 
     public void DeleteTreeById(string Id)
@@ -383,29 +518,11 @@ public class Planetoid : MonoBehaviour
     {
         Vector3 PlanetLocation = WorldSpacePlanetLocation();
         Vector3 PlayerLocation = WorldSpacePlayerLocation();
-
-        RaycastHit Hit;
         Vector3 Direction = (PlanetLocation - PlayerLocation).normalized;
-
-        int IgnoreLayer = ~(1 << LayerMask.NameToLayer("PlayerMask"));
-        int SelectionLayer = 1 << LayerMask.NameToLayer("PlanetoidChunkMask");
-
-        if (Physics.Raycast(PlayerLocation, Direction, out Hit, 1000f, IgnoreLayer | SelectionLayer))
-        {
-            PlanetoidChunk Chunk = Hit.collider.gameObject.GetComponent<PlanetoidChunk>();
-            if (Chunk == null)
-            {
-                Debug.DrawLine(PlayerLocation, PlanetLocation, Color.red);
-                return null;
-            }
-            Debug.DrawLine(PlayerLocation, Hit.point, Color.green);
-            return Chunk.Tree;
-        }
-        else
-        {
-            Debug.DrawLine(PlayerLocation, PlanetLocation, Color.red);
-        }
-
+        Vector3 LocalPointOnSphere = Direction * SizeSetting.Radius;
+        RaycastHit Hit = RaycastOnPlanet(LocalPointOnSphere);
+        if(Hit.collider)
+            return Hit.collider.gameObject.GetComponent<PlanetoidChunk>().Tree;
         return null;
     }
 

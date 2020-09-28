@@ -12,10 +12,14 @@ public class PlanetoidChunk : MonoBehaviour
     //public GameObject HousePrefab;
 
     private MeshRenderer MeshRen;
-    public MeshGeneratorData MeshData;
+    public ChunkData _ChunkData;
 
     //public Shader WireframeShader;
     //public Shader TerrainShader;
+
+
+    private Mesh GrassMesh;
+    private Material GrassMaterial;
 
     void Start()
     {
@@ -25,22 +29,43 @@ public class PlanetoidChunk : MonoBehaviour
     // Update is called once per frame
     void Update()
     {
-        if(_Tree != null)
+        if (_Tree != null && _ChunkData.GrassData.Count>0 && Vector3.Distance(WorldSpaceLocation(), Planet.WorldSpacePlayerLocation()) <= 500)
         {
+            //https://github.com/keijiro/NoiseBall3
+            //https://github.com/Pandanym/GrassExperiments/tree/master/Assets
+
+            //MeshData.GrassDataTemp
+            foreach (List<Matrix4x4> GrassBatch in _ChunkData.GrassData)
+            {
+                if (GrassBatch.Count > 0)
+                {
+                    Graphics.DrawMeshInstanced(GrassMesh, 0, GrassMaterial, GrassBatch, null, UnityEngine.Rendering.ShadowCastingMode.Off, false);
+                }
+            }
+
+           
 
         } 
     }
 
-    public void Instantiate(Planetoid planet, MeshGeneratorData meshData, PlanetoidQuadTree tree)
+    public void Instantiate(Planetoid planet, ChunkData chunkData, PlanetoidQuadTree tree, Material grassMaterial)
     {
-        MeshData = meshData;
+        _ChunkData = chunkData;
         Planet = planet;
 
         MeshRen = gameObject.AddComponent<MeshRenderer>();
         MeshFilter Filter = gameObject.AddComponent<MeshFilter>();
-        Filter.sharedMesh = meshData._Mesh;
+        Filter.sharedMesh = _ChunkData._Mesh;
 
         PlanetMaterial = new Material(Shader.Find("Shader Graphs/TerrainShader"));
+        PlanetMaterial.SetFloat("_maxHeight", _ChunkData.MaxHeight);
+        PlanetMaterial.SetFloat("_radius", Planet.SizeSetting.Radius);
+        PlanetMaterial.SetVector("_planetLocation", Planet.transform.position);
+
+        GrassMaterial = grassMaterial;
+
+        GrassMesh = Resources.Load<Mesh>("Grass_Mesh");
+
         //HighlightMaterial = new Material(Shader.Find("VR/SpatialMapping/Wireframe"));
 
         //PlanetMaterial = new Material(TerrainShader);
@@ -49,7 +74,7 @@ public class PlanetoidChunk : MonoBehaviour
         Tree = tree;
        
         MeshCollider Collider = gameObject.AddComponent<MeshCollider>();
-        Collider.sharedMesh = meshData._Mesh;
+        Collider.sharedMesh = _ChunkData._Mesh;
         Collider.convex = false;
         //tree.Resolution != 2;
         //Collider.convex =true;
@@ -69,6 +94,11 @@ public class PlanetoidChunk : MonoBehaviour
             houseObj.transform.parent = transform;
         }*/
 
+    }
+
+    public Vector3 WorldSpaceLocation()
+    {
+        return _ChunkData.VertData[_ChunkData.VertData.Length / 2] + Planet.transform.position;
     }
 
     public void UpdateMeshColor(Color[] colors)

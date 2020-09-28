@@ -10,7 +10,9 @@ public struct PlanetoidSizeSetting
     public int MinEdgeTiles;
     public int MinResolution;
     public Vector3 Position;
-
+    public int PlanetSeed;
+    public float CloudScaler;
+    public float NodeScaler;
     public static float LINEAR_RADIUS_MULTIPLIER = 0.25f;
 
     public PlanetoidSizeSetting(string planetName, int edgePower, int minEdgeTiles, int minResolution, Vector3 position)
@@ -20,6 +22,9 @@ public struct PlanetoidSizeSetting
         MinEdgeTiles = minEdgeTiles;
         MinResolution = minResolution;
         Position = position;
+        PlanetSeed = 0;
+        CloudScaler = 1f;
+        NodeScaler = 1200f;
 
         if (MaxTreeDepth <= 0)
         {
@@ -31,7 +36,7 @@ public struct PlanetoidSizeSetting
     {
        get
        {
-            return (int) Position.magnitude;
+            return (int) Position.magnitude + PlanetSeed;
        }
     }
 
@@ -39,7 +44,7 @@ public struct PlanetoidSizeSetting
     {
         get
         {
-            return (int) Position.sqrMagnitude;
+            return (int) Position.sqrMagnitude + PlanetSeed;
         }
     }
 
@@ -61,6 +66,11 @@ public struct PlanetoidSizeSetting
     public float Radius
     {
         get { return Circumference / (2f * Mathf.PI); }
+    }
+
+    public float SurfaceArea
+    {
+        get { return 4 * Mathf.PI * Mathf.Pow(Radius, 2); }
     }
 
     public float Mass
@@ -87,33 +97,34 @@ public struct PlanetoidSizeSetting
         }
     }
 
-    public PlanetoidRenderType RenderTypeForDistanceToSurface(float Distance)
+    public Sphere Sphere
+    {
+        get
+        {
+            return new Sphere(Vector3.zero,Radius);
+        }
+    }
+
+    public PlanetoidRenderType RenderTypeForDistanceToSurface(float Distance, float MaxHeight)
     {
         float radius = Radius;
 
-        if (Distance < RenderTypeDiameter(PlanetoidRenderType.PLAYER_ON_PLANET, radius)/2f)
+        if (Distance <= RenderTypeRadius(PlanetoidRenderType.PLAYER_ON_PLANET, radius, MaxHeight))
             return PlanetoidRenderType.PLAYER_ON_PLANET;
 
-        if (Distance < RenderTypeDiameter(PlanetoidRenderType.PLAYER_VERY_CLOSE, radius)/2f)
+        if (Distance <= RenderTypeRadius(PlanetoidRenderType.PLAYER_VERY_CLOSE, radius, MaxHeight))
             return PlanetoidRenderType.PLAYER_VERY_CLOSE;
 
-        if (Distance < RenderTypeDiameter(PlanetoidRenderType.PLAYER_CLOSE, radius)/2f)
+        if (Distance <= RenderTypeRadius(PlanetoidRenderType.PLAYER_CLOSE, radius, MaxHeight))
             return PlanetoidRenderType.PLAYER_CLOSE;
 
-        if (Distance < RenderTypeDiameter(PlanetoidRenderType.PLAYER_FAR, radius)/2f)
+        if (Distance <= RenderTypeRadius(PlanetoidRenderType.PLAYER_FAR, radius, MaxHeight))
             return PlanetoidRenderType.PLAYER_FAR;
 
-        if (Distance < RenderTypeDiameter(PlanetoidRenderType.PLAYER_VERY_FAR, radius)/2f)
+        if (Distance <= RenderTypeRadius(PlanetoidRenderType.PLAYER_VERY_FAR, radius, MaxHeight))
             return PlanetoidRenderType.PLAYER_VERY_FAR;
 
         return PlanetoidRenderType.PLAYER_NOT_IN_RANGE;
-    }
-
-    public static float RenderTypeDiameter(PlanetoidRenderType Type, float Radius)
-    {
-        //return Radius + (LINEAR_RADIUS_MULTIPLIER * Mathf.Pow(((int)Type + 1), 2)* Radius);
-        //return (Radius*2f) + (1 * ((int)Type + 1) * Radius * LINEAR_RADIUS_MULTIPLIER);
-        return (Radius + (Mathf.Log(Radius)* 30 * ((int)Type + 1)) + (Radius*Mathf.Log(Radius) * LINEAR_RADIUS_MULTIPLIER* LINEAR_RADIUS_MULTIPLIER));
     }
 
     public int MaxResolution
@@ -122,9 +133,37 @@ public struct PlanetoidSizeSetting
         {
             if (MaxEdgeTiles <= 64) return 4;
             else if (MaxEdgeTiles <= 256) return 16;
-            return MaxEdgeTiles/16;
+            return MaxEdgeTiles / 16;
         }
     }
+
+
+    public static float RenderTypeRadius(PlanetoidRenderType Type, float Radius, float MaxHeight)
+    {
+        //return Radius + (LINEAR_RADIUS_MULTIPLIER * Mathf.Pow(((int)Type + 1), 2)* Radius);
+        //return (Radius*2f) + (1 * ((int)Type + 1) * Radius * LINEAR_RADIUS_MULTIPLIER);
+        //return (Radius + (Mathf.Log(Radius)* 30 * ((int)Type + 1)) + (Radius*Mathf.Log(Radius) * LINEAR_RADIUS_MULTIPLIER* LINEAR_RADIUS_MULTIPLIER));
+
+        float RadiusAboveSurface = (Radius+ MaxHeight) + (30 * ((int)Type + 1) * Mathf.Log(Radius));
+        return RadiusAboveSurface;
+    }
+
+    public static PlanetoidSizeSetting SmallPlanet
+    {
+        get
+        {
+            return new PlanetoidSizeSetting("Temp", 9, 32, 1, Vector3.zero);
+        }
+    }
+
+    public static PlanetoidSizeSetting LargePlanet
+    {
+        get
+        {
+            return new PlanetoidSizeSetting("Temp", 13, 32, 1, Vector3.zero);
+        }
+    }
+
 
     override
     public string ToString()

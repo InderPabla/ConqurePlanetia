@@ -16,4 +16,11 @@ public class WorldManager : MonoBehaviour
     {
         
     }
+
+    void OnApplicationQuit()
+    {
+        Debug.Log("Deleteing MeshGeneratorDataStorage, and killing thread");
+        ChunkDataStorage.GetInstance().StorageCleanUp();
+        ChunkDataStorage.GetInstance().Kill();
+    }
 }
