@@ -35,13 +35,13 @@ public class PlanetoidChunk : MonoBehaviour
             //https://github.com/Pandanym/GrassExperiments/tree/master/Assets
 
             //MeshData.GrassDataTemp
-            foreach (List<Matrix4x4> GrassBatch in _ChunkData.GrassData)
+            /*foreach (List<Matrix4x4> GrassBatch in _ChunkData.GrassData)
             {
                 if (GrassBatch.Count > 0)
                 {
                     Graphics.DrawMeshInstanced(GrassMesh, 0, GrassMaterial, GrassBatch, null, UnityEngine.Rendering.ShadowCastingMode.Off, false);
                 }
-            }
+            }*/
 
            
 

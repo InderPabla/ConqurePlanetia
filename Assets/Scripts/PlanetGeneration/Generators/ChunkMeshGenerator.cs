@@ -485,11 +485,16 @@ public class ChunkMeshGenerator
         for (int i = 0; i < VertColors.Length; i++)
         {
             float height01 = GenNoise._MaxNoise == 0 ? 1f : Height[i] / GenNoise._MaxNoise;
-            float change = -0.015f*1.75f;
+            float change = 0.01f;
 
-            float randH = ((float)Rand.NextDouble() * change * 2f) + change;
-            float randS = ((float)Rand.NextDouble() * change * 2f) + change;
-            float randV = ((float)Rand.NextDouble() * change * 2f) + change;
+            //float randH = (((float)Rand.NextDouble() * change * 2f) - change) * Mathf.Pow((float)Rand.NextDouble(), 2) * 2f;
+            //float randS = (((float)Rand.NextDouble() * change * 2f) - change) * Mathf.Pow((float)Rand.NextDouble(), 2) * 2f;
+            //float randV = (((float)Rand.NextDouble() * change * 2f) - change) * Mathf.Pow((float)Rand.NextDouble(), 2) * 2f;
+
+            float randH = (((float)Rand.NextDouble() * change * 2f) - change);
+            float randS = (((float)Rand.NextDouble() * change * 2f) - change);
+            float randV = (((float)Rand.NextDouble() * change * 2f) - change);
+
             Color height01Color = ColorGradient.Evaluate(height01);
             float hColor, sColor, vColor;
             Color.RGBToHSV(height01Color, out hColor, out sColor, out vColor);
@@ -582,7 +587,7 @@ public class ChunkMeshGenerator
         GrassStore GrassData = Storage.HasGrassData(SizeSettings.PlanetName, Tree.Id) ? Storage.StorageGetGrassData(SizeSettings.PlanetName, Tree.Id) : new GrassStore();
         //List<List<Matrix4x4>> GrassData = new List<List<Matrix4x4>>();
 
-        if (true)
+        if (false)
         {
             if (GrassData.Count == 0 && Tree.Resolution <= SizeSettings.MinResolution * 2)
             {

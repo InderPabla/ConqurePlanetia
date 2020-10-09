@@ -46,6 +46,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   PlanetoidChunkPrefab: {fileID: 2582068673568886831, guid: 4d657daa30f3f924582356df3967e376,
     type: 3}
+  DebirsPrefab: {fileID: 4103300505121742351, guid: 03a9121eea7e4554cbbecf5e5d028101,
+    type: 3}
   RadiusSpherePrefab: {fileID: -4707792659650547896, guid: b940df2d5b0a7b743af1a66e7a2ccb96,
     type: 3}
   MeshCompute: {fileID: 7200000, guid: bc663ecdb05e68e48aecfa3ad15f71b0, type: 3}
@@ -109,6 +111,7 @@ MonoBehaviour:
   IgnoreNoiseSetting: 0
   WireframeMode: 0
   HideRangeShell: 0
+  TextFont: {fileID: 10102, guid: 0000000000000000e000000000000000, type: 0}
   TreeMesh: {fileID: 4300000, guid: d7ad634caa1c049d49b730cc6d29c683, type: 3}
   TempCubePrefab: {fileID: 262246466646322755, guid: 91a717cec05392840b136f70ab14e13b,
     type: 3}

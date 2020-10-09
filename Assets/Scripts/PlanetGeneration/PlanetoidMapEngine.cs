@@ -109,7 +109,7 @@ public class PlanetoidMapEngine
     public bool Update()
     {
         bool UpdateOccured = false;
-        if (TreeManager == null || TreeManager.IsAllQueueEmpty())
+        if (TreeManager == null || IsAllQueueEmpty)
         {
             UpdateOccured = UpdateTreeManager();
         }
@@ -217,7 +217,7 @@ public class PlanetoidMapEngine
         if (RenderType <= PlanetoidRenderType.PLAYER_ON_PLANET)
         {
 
-            if (sphere.Distance(LocalSpacePlayerLocationOnSphere, CurrentLocalSpacePlayerLocationOnSphere) <= 400f) return false;
+            if (sphere.Distance(LocalSpacePlayerLocationOnSphere, CurrentLocalSpacePlayerLocationOnSphere) <= SizeSetting.MinEdgeTiles*1.25f) return false;
 
             PlanetoidTreeManager NewTreeManger = new PlanetoidTreeManager(SizeSetting);
             //NewTreeManger.SetResolutionToBeSize();
@@ -282,7 +282,7 @@ public class PlanetoidMapEngine
 
         Circle Res1 = new Circle(Center, Radius / 1f);
         Circle Res2 = new Circle(Center, Radius / 2f);
-        Circle Res3 = new Circle(Center, Radius / 12f);
+        Circle Res3 = new Circle(Center, Radius / 8f);
 
         int TreeRes1 = HighestResolution * ResMulti * ResMulti * ResMulti * ResMulti;
         int TreeRes2 = HighestResolution * ResMulti * ResMulti * ResMulti;
@@ -398,6 +398,27 @@ public class PlanetoidMapEngine
             if (CreateImmediate) Operation.DeleteTree(Tree);
             else NewManager.AddDeleteTree(Tree);
         }
+    }
+
+    public bool IsAllQueueEmpty
+    {
+        get
+        {
+            return TreeManager.IsAllQueueEmpty();
+        }
+    }
+
+    public int TotalNodes
+    {
+        get
+        {
+            return NodeManager.TotalNodes;
+        }
+    }
+
+    public PlanetoidNode GetNodeAtIndex(int Index)
+    {
+        return NodeManager.GetNodeAtIndex(Index);
     }
 
 

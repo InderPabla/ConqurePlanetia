@@ -131,9 +131,9 @@ public struct PlanetoidSizeSetting
     {
         get
         {
-            if (MaxEdgeTiles <= 64) return 4;
-            else if (MaxEdgeTiles <= 256) return 16;
-            return MaxEdgeTiles / 16;
+            if (MaxEdgeTiles <= 64) return 4*2;
+            else if (MaxEdgeTiles <= 256) return 16 * 2;
+            return MaxEdgeTiles / (16 * 2);
         }
     }
 

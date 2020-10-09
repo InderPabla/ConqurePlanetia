@@ -12,6 +12,7 @@ public enum CoroutineState
 public class Planetoid : MonoBehaviour
 {
     public PlanetoidChunk PlanetoidChunkPrefab;
+    public GameObject DebirsPrefab;
     public PlanetoidRadiusSphere RadiusSpherePrefab;
     public ComputeShader MeshCompute;
 
@@ -22,6 +23,7 @@ public class Planetoid : MonoBehaviour
     public bool IgnoreNoiseSetting = false;
     public bool WireframeMode = false;
     public bool HideRangeShell = false;
+    public Font TextFont;
 
     private PlanetoidMapEngine Engine;
 
@@ -37,25 +39,36 @@ public class Planetoid : MonoBehaviour
     private Material GrassMaterial;
 
     private Mesh CircleMesh;
-    public Mesh TreeMesh;
-    private Mesh CubeMesh;
+    public Mesh FirTreeMesh;
+    public Mesh OakTreeMesh;
+    public Mesh GrassMesh;
+
+
     private Material CircleMat;
-    private Material CubeMat;
-    private Material TreeMat;
+    private Material OakTreeMat;
+    private Material FirTreeMat;
 
     private Canvas _Canvas;
+    private Text _Text;
 
     public GameObject TempCubePrefab;
-    
-    //private List<List<Matrix4x4>> FirTreeTotalList = new List<List<Matrix4x4>>();
-    private List<Matrix4x4> FirTreeTotalList = new List<Matrix4x4>();
+
     private List<List<Matrix4x4>> FirTreeRenderList = new List<List<Matrix4x4>>();
     private List<List<Matrix4x4>> FirTreeRenderListTemp = new List<List<Matrix4x4>>();
+
+    private List<List<Matrix4x4>> OakTreeRenderList = new List<List<Matrix4x4>>();
+    private List<List<Matrix4x4>> OakTreeRenderListTemp = new List<List<Matrix4x4>>();
+
+    private List<List<Matrix4x4>> GrassTreeRenderList = new List<List<Matrix4x4>>();
+    private List<List<Matrix4x4>> GrassTreeRenderListTemp = new List<List<Matrix4x4>>();
+
+
     private System.Diagnostics.Stopwatch Watch;
 
 
     private bool QueuedTreeRoutine;
     private CoroutineState TreeRoutineState = CoroutineState.STOPPED;
+    //private GameObject[] Debris;
 
     public Planetoid()
     {
@@ -72,6 +85,7 @@ public class Planetoid : MonoBehaviour
         Player = FindObjectOfType<PlanetoidPlayer>();
         RigPlanet = GetComponent<Rigidbody>();
         _Canvas = GameObject.Find("Canvas").GetComponent<Canvas>();
+       
         Init();
     
     }
@@ -87,18 +101,36 @@ public class Planetoid : MonoBehaviour
         Engine = new PlanetoidMapEngine(SizeSetting, Operations, ColorGradient, NoiseSettings, IgnoreNoiseSetting, MeshCompute);
         InitMaterials();
         Engine.Init();
-
+       
         //InitRaycastObjectsOnSurface();
         if (!HideRangeShell) InitAtmosphereSphere();
+
+       /* Debris = new GameObject[25];
+        for (int i = 0; i < Debris.Length; i++)
+        {
+
+            Debris[i] = Instantiate(DebirsPrefab);
+            PlanetoidNode RandomNode = Engine.GetNodeAtIndex(UnityEngine.Random.Range(0, Engine.TotalNodes));
+
+            Debris[i].transform.position = transform.position + RandomNode.LocalSpacePoint + RandomNode.LocalSpacePoint.normalized * (Engine.GenNoise._MaxNoise + 350f);// transform.position + new Vector3(0, SizeSetting.Radius + Engine.GenNoise._MaxNoise + 250f, 0);
+            Debris[i].transform.parent = transform;
+
+
+        }*/
     }
 
     private void InitProperties()
     {
+        System.Random Rand = new System.Random(SizeSetting.PlanetSeed);
+        float distanceMulti = 50000f;
+        float x = (float)Rand.NextDouble() * distanceMulti * 2f - distanceMulti;
+        float y = (float)Rand.NextDouble() * distanceMulti * 2f - distanceMulti;
+        float z = (float)Rand.NextDouble() * distanceMulti * 2f - distanceMulti;
+        transform.position = new Vector3(x, y, z);
+
         SizeSetting.Position = transform.position;
 
         ColorGradient = new Gradient();
-
-        System.Random Rand = new System.Random(SizeSetting.Seed);
 
         int numberOfColors = (int)(Rand.NextDouble() * (9 - 3) + 3);
         GradientColorKey[] colorKeys = new GradientColorKey[numberOfColors];
@@ -138,6 +170,13 @@ public class Planetoid : MonoBehaviour
 
         ColorGradient.SetKeys(colorKeys, alphaKeys);
         ColorGradient.mode = GradientMode.Blend;
+
+        GameObject DistanceTextObj = new GameObject();
+        DistanceTextObj.name = SizeSetting.PlanetName + "_Distance_Text";
+        DistanceTextObj.transform.parent = _Canvas.transform;
+        _Text = DistanceTextObj.AddComponent<Text>();
+        _Text.font = TextFont;
+        _Text.fontSize = 12;
     }
 
     private void InitMaterials()
@@ -159,15 +198,17 @@ public class Planetoid : MonoBehaviour
         CircleMat = new Material(Shader.Find("Lightweight Render Pipeline/Unlit"));
         CircleMat.SetColor("_BaseColor", ColorGradient.colorKeys[0].color);
 
-        CubeMesh = PrimitiveMeshGenerator.GenerateCubeMesh();
-        CubeMat = new Material(Shader.Find("Lightweight Render Pipeline/Simple Lit"));
-        CubeMat.SetColor("_BaseColor", Color.cyan);
-        CubeMat.enableInstancing = true;
+        Material BaseOakTreeMaterial = Resources.Load<Material>("OakTreeMat");
+        OakTreeMat = new Material(Shader.Find(BaseOakTreeMaterial.shader.name));
+        OakTreeMat.CopyPropertiesFromMaterial(BaseOakTreeMaterial);
+        //TreeMat.SetColor("_BaseColor", ColorGradient.colorKeys[0].color);
+        OakTreeMat.SetColor("_BaseColor", Color.white);
 
-        Material BaseTreeMaterial = Resources.Load<Material>("TreeMat");
-        TreeMat = new Material(Shader.Find(BaseTreeMaterial.shader.name));
-        TreeMat.CopyPropertiesFromMaterial(BaseTreeMaterial);
-        TreeMat.SetColor("_BaseColor", ColorGradient.colorKeys[0].color);
+        Material BaseFirTreeMaterial = Resources.Load<Material>("FirTreeMat");
+        FirTreeMat = new Material(Shader.Find(BaseFirTreeMaterial.shader.name));
+        FirTreeMat.CopyPropertiesFromMaterial(BaseFirTreeMaterial);
+        //TreeMat.SetColor("_BaseColor", ColorGradient.colorKeys[0].color);
+        FirTreeMat.SetColor("_BaseColor", Color.white);
     }
 
     private RaycastHit RaycastOnPlanet(Vector3 LocalPointOnSphere)
@@ -178,8 +219,10 @@ public class Planetoid : MonoBehaviour
         RaycastHit Hit;
         int IgnoreLayer = ~(1 << LayerMask.NameToLayer("PlayerMask"));
         int SelectionLayer = 1 << LayerMask.NameToLayer("PlanetoidChunkMask");
-        Vector3 Origin = (DirectionFromPlanet * (SizeSetting.Radius + 5f + Engine.GenNoise._MaxNoise)) + PlanetCenter;
-        if (Physics.Raycast(Origin, DirectionToPlanet, out Hit, Engine.GenNoise._MaxNoise+100f, SelectionLayer))
+        float MaxNoise = Engine.GenNoise._MaxNoise;
+
+        Vector3 Origin = (DirectionFromPlanet * (SizeSetting.Radius + 5f + MaxNoise)) + PlanetCenter;
+        if (Physics.Raycast(Origin, DirectionToPlanet, out Hit, MaxNoise + 100f, SelectionLayer))
         {
             if (Hit.collider.transform.GetComponent<PlanetoidChunk>() == null)
             {
@@ -289,13 +332,37 @@ public class Planetoid : MonoBehaviour
     {
         Vector3 PlanetWorldPosition = transform.position;
         Vector3 PlayerWorldPosition = Player.transform.position;
+        float DistanceBetweenPlayerAndPlanetMeter = Vector3.Distance(PlanetWorldPosition, PlayerWorldPosition);
+        float DistanceKm = (DistanceBetweenPlayerAndPlanetMeter / 1000f);
+        string DistanceKmRounded = string.Format("{0:0.00}", DistanceKm);
+
         Vector3 ViewportPoint = Camera.main.WorldToViewportPoint(PlanetWorldPosition);
         Vector3 ScreenPoint = Camera.main.WorldToScreenPoint(PlanetWorldPosition);
+        ScreenPoint.z = 0;
         Vector3 ScreenDim = new Vector3(Screen.width, Screen.height, 0);
-
+        
         bool UpdateOccured = Engine.Update();
         GrassMaterial.SetVector("_playerLocation", Player.transform.position);
 
+
+        _Text.text = SizeSetting.PlanetName+": "+ DistanceKmRounded + "km";
+        _Text.rectTransform.position = ScreenPoint;
+
+       
+        if (DistanceKm>2 && ViewportPoint.z > 0 && ViewportPoint.x > 0 && ViewportPoint.x < 1 && ViewportPoint.y > 0 && ViewportPoint.y < 1)
+        {
+            float TextAlpha = DistanceKm / 40f;
+            TextAlpha = TextAlpha > 1f ? 1f : TextAlpha;
+            Color TextColor = _Text.color;
+            TextColor.a = TextAlpha;
+            _Text.color = TextColor;
+        }
+        else
+        {
+            _Text.text = "";
+        }
+
+        //.rect = new Rect(Vector2.zero, new Vector2(100f,50f));
 
         //transform.rotation = transform.rotation * Quaternion.Euler(0.01f,0.01f,0.01f);
 
@@ -323,9 +390,18 @@ public class Planetoid : MonoBehaviour
         Graphics.DrawMesh(CircleMesh, Matrix, CircleMat, 0, null, 0, null, false, false, false);*/
 
 
-
-        if (Engine.RenderType <= PlanetoidRenderType.PLAYER_CLOSE)
+        if (Engine.RenderType <= PlanetoidRenderType.PLAYER_VERY_FAR)
         {
+           /* Vector3 LightDirection = (PlanetWorldPosition - PlayerWorldPosition).normalized;
+            Vector3 Normal = LightDirection;
+           
+            Vector3 AxisA = new Vector3(Normal.y, Normal.z, Normal.x);
+            Vector3 AxisB = Vector3.Cross(Normal, AxisA);
+            //Rotation Towards = LookTowards(World Up, World Forward) * TurnOnAxis(TrunDegrees,Local Direction To Turn Defrees On)
+            Quaternion LookRotation = Quaternion.LookRotation(AxisA, Normal) * Quaternion.AngleAxis(-90,Vector3.right);
+
+            GameObject.Find("Directional Light").transform.rotation = LookRotation;*/
+
             if (UpdateOccured)
             {
                 Debug.Log(SizeSetting.PlanetName + " Update Occured.");
@@ -339,23 +415,49 @@ public class Planetoid : MonoBehaviour
                 //Debug.Log(SizeSetting.PlanetName + " Tree Routine Stopped at ticks: " + CurrentTick);
                 //int TotalCreatedSoFar = ((FirTreeRenderListTemp.Count - 1) * 1023) + FirTreeRenderListTemp[FirTreeRenderListTemp.Count - 1].Count;
                 StopCoroutine("TreeFinderCoroutine");
+
                 FirTreeRenderList = FirTreeRenderListTemp;
+                OakTreeRenderList = OakTreeRenderListTemp;
+                GrassTreeRenderList = GrassTreeRenderListTemp;
+
                 FirTreeRenderListTemp = new List<List<Matrix4x4>>();
+                OakTreeRenderListTemp = new List<List<Matrix4x4>>();
+                GrassTreeRenderListTemp = new List<List<Matrix4x4>>();
             }
-            else if (QueuedTreeRoutine == true && TreeRoutineState == CoroutineState.STOPPED)
+            else if (QueuedTreeRoutine == true && TreeRoutineState == CoroutineState.STOPPED && Engine.IsAllQueueEmpty)
             {
                 //Debug.Log(SizeSetting.PlanetName + "Tree Routine Started at ticks: " + CurrentTick);
                 TreeRoutineState = CoroutineState.RUNNING;
                 QueuedTreeRoutine = false;
+
                 FirTreeRenderListTemp = new List<List<Matrix4x4>>();
+                OakTreeRenderListTemp = new List<List<Matrix4x4>>();
+                GrassTreeRenderListTemp = new List<List<Matrix4x4>>();
+
                 StartCoroutine("TreeFinderCoroutine");
             }
 
-            foreach (List<Matrix4x4> FirTreeList in FirTreeRenderList)
+            foreach (List<Matrix4x4> TreeList in FirTreeRenderList)
             {
-                if (FirTreeList.Count > 0)
+                if (TreeList.Count > 0)
                 {
-                    Graphics.DrawMeshInstanced(TreeMesh, 0, TreeMat, FirTreeList, null, UnityEngine.Rendering.ShadowCastingMode.On, false);
+                    Graphics.DrawMeshInstanced(FirTreeMesh, 0, FirTreeMat, TreeList, null, UnityEngine.Rendering.ShadowCastingMode.On, false);
+                }
+            }
+
+            foreach (List<Matrix4x4> TreeList in OakTreeRenderList)
+            {
+                if (TreeList.Count > 0)
+                {
+                    Graphics.DrawMeshInstanced(OakTreeMesh, 0, OakTreeMat, TreeList, null, UnityEngine.Rendering.ShadowCastingMode.On, false);
+                }
+            }
+
+            foreach (List<Matrix4x4> GrassList in GrassTreeRenderList)
+            {
+                if (GrassList.Count > 0)
+                {
+                    Graphics.DrawMeshInstanced(GrassMesh, 0, GrassMaterial, GrassList, null, UnityEngine.Rendering.ShadowCastingMode.Off, false);
                 }
             }
         }
@@ -363,6 +465,9 @@ public class Planetoid : MonoBehaviour
         {
             TreeRoutineState = CoroutineState.STOPPED;
         }
+
+        //for(int i = 0; i< Debris.Length; i++)
+            //Debris[i].transform.RotateAround(PlanetWorldPosition, Vector3.right, 5f * Time.deltaTime);
     }
 
 
@@ -376,7 +481,6 @@ public class Planetoid : MonoBehaviour
     //https://mathinsight.org/spherical_coordinates  (cool visual)
     IEnumerator TreeFinderCoroutine()
     {
-        int TreesToRenderCount = 0;
         Vector3 PlayerWorldPosition = Player.transform.position;
         Vector3 PlanetWorldPosition = transform.position;
         PlanetoidNode NearestNode = Engine.Solution.FindNearestNodeToPlayer();
@@ -390,44 +494,116 @@ public class Planetoid : MonoBehaviour
 
         while (StartIndex <= NearestNodes.Count - 1)
         {
-            EndIndex = EndIndex + 256;
+            EndIndex = EndIndex + 1023; 
             EndIndex = EndIndex >= NearestNodes.Count ? NearestNodes.Count - 1 : EndIndex;
 
             for (int i = StartIndex; i <= EndIndex; i++)
             {
                 PlanetoidNode Node = NearestNodes[i];
+                if (Node.NodeType == PlanetoidNodeType.EMPTY) continue;
 
                 RaycastHit Hit = RaycastOnPlanet(Node.LocalSpacePoint);
-
 
                 Vector3 Normal = Node.InitialHitNormal;
                 Vector3 AxisA = new Vector3(Normal.y, Normal.z, Normal.x);
                 Vector3 AxisB = Vector3.Cross(Normal, AxisA);
-                //Rotation Towards = LookTowards(World Up, World Forward) * TurnOnAxis(TrunDegrees,Local Direction To Turn Defrees On)
-                Quaternion LookRotation = Quaternion.LookRotation(AxisB, Normal) * Quaternion.AngleAxis(135, Vector3.up);
-                Vector3 TargetUp = LookRotation * Vector3.up;
-                Vector3 Position = Hit.collider? Hit.point:Node.InitialLocalSpaceHitPoint + PlanetWorldPosition;
-                Vector3 Scale = Vector3.one * 4f;
-                //if (Node.LongLatPoint.LongXIndex == NearestNode.LongLatPoint.LongXIndex && Node.LongLatPoint.LatYIndex == NearestNode.LongLatPoint.LatYIndex)
-                    //Scale *= 3f;
-                Position -= TargetUp * Scale.y * 0.1f;
 
-                Matrix4x4 Matrix = Matrix4x4.TRS(Position,LookRotation,Scale);
 
-                if (FirTreeRenderListTemp.Count == 0 || FirTreeRenderListTemp[FirTreeRenderListTemp.Count - 1].Count == 1023)
+                if (Node.NodeType == PlanetoidNodeType.GRASS)
                 {
-                    FirTreeRenderListTemp.Add(new List<Matrix4x4>());
+                    //Rotation Towards = LookTowards(World Up, World Forward) * TurnOnAxis(TrunDegrees,Local Direction To Turn Defrees On)
+                    Quaternion LookRotation = Quaternion.LookRotation(AxisB, Normal) * Quaternion.AngleAxis(135, Vector3.up);
+
+                    Quaternion MeshFixRotation = Quaternion.LookRotation(Normal, Vector3.forward);
+                    Quaternion RandomRotation = Quaternion.Euler(new Vector3(0, 0, UnityEngine.Random.Range(0f, 0f)));
+                    LookRotation = MeshFixRotation * RandomRotation;
+
+                    Vector3 TargetUp = LookRotation * Vector3.up;
+                    Vector3 Position = Hit.collider ? Hit.point : Node.InitialLocalSpaceHitPoint + PlanetWorldPosition;
+                    Vector3 Scale = Vector3.one*3f;
+                    Position -= TargetUp * Scale.y * 0.1f;
+
+                    Matrix4x4 Matrix = Matrix4x4.TRS(Position, LookRotation, Scale);
+                    if (GrassTreeRenderListTemp.Count == 0 || GrassTreeRenderListTemp[GrassTreeRenderListTemp.Count - 1].Count == 1023)
+                    {
+                        GrassTreeRenderListTemp.Add(new List<Matrix4x4>());
+                    }
+                    GrassTreeRenderListTemp[GrassTreeRenderListTemp.Count - 1].Add(Matrix);
+
+                    
+                    for(int j = 0; j < Node.LongLatPointsNearIndex.Length;j++)
+                    {
+                        Hit = RaycastOnPlanet(Node.LongLatPointsNearIndex[j].Point);
+
+                        Normal = Hit.collider? Hit.normal:Node.LongLatPointsNearIndex[j].Point.normalized;
+                        AxisA = new Vector3(Normal.y, Normal.z, Normal.x);
+                        AxisB = Vector3.Cross(Normal, AxisA);
+
+                        MeshFixRotation = Quaternion.LookRotation(Normal, Vector3.forward);
+                        RandomRotation = Quaternion.Euler(new Vector3(0, 0, UnityEngine.Random.Range(0f, 0f)));
+                        LookRotation = MeshFixRotation * RandomRotation;
+
+                        TargetUp = LookRotation * Vector3.up;
+                        Position = Hit.collider ? Hit.point : Node.LongLatPointsNearIndex[j].Point + PlanetWorldPosition;
+                        Scale = Vector3.one * 2f;
+                        Position -= TargetUp * Scale.y * 0.1f;
+
+                        Matrix = Matrix4x4.TRS(Position, LookRotation, Scale);
+                        if (GrassTreeRenderListTemp.Count == 0 || GrassTreeRenderListTemp[GrassTreeRenderListTemp.Count - 1].Count == 1023)
+                        {
+                            GrassTreeRenderListTemp.Add(new List<Matrix4x4>());
+                        }
+                        GrassTreeRenderListTemp[GrassTreeRenderListTemp.Count - 1].Add(Matrix);
+                    }
+
+
                 }
-                FirTreeRenderListTemp[FirTreeRenderListTemp.Count - 1].Add(Matrix);
-                TreesToRenderCount++;
+                else
+                {
+                    //Rotation Towards = LookTowards(World Up, World Forward) * TurnOnAxis(TrunDegrees,Local Direction To Turn Defrees On)
+                    Quaternion LookRotation = Quaternion.LookRotation(AxisB, Normal) * Quaternion.AngleAxis(135, Vector3.up);
+                    Vector3 TargetUp = LookRotation * Vector3.up;
+                    Vector3 Position = Hit.collider ? Hit.point : Node.InitialLocalSpaceHitPoint + PlanetWorldPosition;
+                    Vector3 Scale = Vector3.one * 7f;
+                    Position -= TargetUp * Scale.y * 0.1f;
+
+                    if (Node.NodeType == PlanetoidNodeType.FIR_TREE)
+                    {
+                        Matrix4x4 Matrix = Matrix4x4.TRS(Position, LookRotation, Scale);
+
+                        if (FirTreeRenderListTemp.Count == 0 || FirTreeRenderListTemp[FirTreeRenderListTemp.Count - 1].Count == 1023)
+                        {
+                            FirTreeRenderListTemp.Add(new List<Matrix4x4>());
+                        }
+                        FirTreeRenderListTemp[FirTreeRenderListTemp.Count - 1].Add(Matrix);
+                    }
+                    else if (Node.NodeType == PlanetoidNodeType.OAK_TREE)
+                    {
+                        Matrix4x4 Matrix = Matrix4x4.TRS(Position, LookRotation, Scale);
+
+                        if (OakTreeRenderListTemp.Count == 0 || OakTreeRenderListTemp[OakTreeRenderListTemp.Count - 1].Count == 1023)
+                        {
+                            OakTreeRenderListTemp.Add(new List<Matrix4x4>());
+                        }
+                        OakTreeRenderListTemp[OakTreeRenderListTemp.Count - 1].Add(Matrix);
+                    }
+                }
+     
             }
 
             StartIndex = EndIndex+1;
 
-            yield return new WaitForSeconds(0.15f);
+            //yield return new WaitForSeconds(0.15f);
+            yield return null;
         }
 
-        Debug.Log("===========>"+NearestNodes.Count + ","+ TreesToRenderCount+"=====" + SizeSetting.PlanetName + ","+ FirTreeRenderListTemp.Count);
+        int FirTreeCount = (FirTreeRenderListTemp.Count - 1) * 1023 + FirTreeRenderListTemp[FirTreeRenderListTemp.Count - 1].Count;
+        int OakTreeCount = (OakTreeRenderListTemp.Count - 1) * 1023 + OakTreeRenderListTemp[OakTreeRenderListTemp.Count - 1].Count;
+        int GrassTreeCount = (GrassTreeRenderListTemp.Count - 1) * 1023 + GrassTreeRenderListTemp[GrassTreeRenderListTemp.Count - 1].Count;
+     
+        Debug.Log(string.Format("Update Completed: Nearest Nodes:{0}, Fir Trees:{1}, Oak Trees:{2}, Grass:{3}",NearestNodes.Count,FirTreeCount,OakTreeCount,GrassTreeCount));
+
+
         TreeRoutineState = CoroutineState.COMPLETED;
         yield break;
     }

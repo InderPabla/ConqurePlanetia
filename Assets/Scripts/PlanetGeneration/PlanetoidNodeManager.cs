@@ -15,13 +15,13 @@ public class PlanetoidNodeData
 public class PlanetoidNodeManager 
 {
     
-    private int TotalNodes;
+    public int TotalNodes;
     private PlanetoidNode[] AllNodeArr;
    
     private float MinDistanceBetweenTwoPoints = 50f;
     private float MinDistanceBetweenTwoPointsScale = 2f;
-    public List<PlanetoidNode> RootNodes;
-    public List<PlanetoidNode>[,] AllNodes2dArr;
+    //private List<PlanetoidNode> RootNodes;
+    private List<PlanetoidNode>[,] AllNodes2dArr;
 
     public PlanetoidMapEngineOperation Operations;
     public PlanetoidSizeSetting SizeSettings;
@@ -58,7 +58,8 @@ public class PlanetoidNodeManager
 
         for (int NodeIndex = 0; NodeIndex < TotalNodes; NodeIndex++)
         {
-            PlanetoidNodeType NodeType = Rand.NextDouble() <= 0.25f ? PlanetoidNodeType.TREE : PlanetoidNodeType.EMPTY;
+            float RandVal = (float)Rand.NextDouble();
+            PlanetoidNodeType NodeType = RandVal <= 0.05f ? PlanetoidNodeType.FIR_TREE : RandVal <= 0.1f ? PlanetoidNodeType.OAK_TREE : RandVal <= 0.2f ? PlanetoidNodeType.GRASS : PlanetoidNodeType.EMPTY;
 
             AllNodeArr[NodeIndex] = PlanetoidNode.GenNode(this, NodeIndex, TotalNodes, Radius, LongLatScale, PlanetCenter, NodeType);
             PlanetoidNodeLongLat LongLatPoint = AllNodeArr[NodeIndex].LongLatPoint;
@@ -82,21 +83,24 @@ public class PlanetoidNodeManager
         ///if (MinDistance < 50f) MinDistance = 50f;
         MinDistanceBetweenTwoPoints = MinDistance * MinDistanceBetweenTwoPointsScale;
 
+    
         float MinDistanceStarted = MinDistanceBetweenTwoPoints * Mathf.Pow(((float)SizeSettings.EdgePower / (float)PlanetoidSizeSetting.SmallPlanet.EdgePower), 8) * 4f;
 
+        string ChildCount = "[";
+        string NodeCount = "[";
+        Dictionary<string, int> DistinctNodeCountsOnLongLat = new Dictionary<string, int>();
+        int indexCount = 0;
 
-        List<PlanetoidNodeData> RootNodeDataList = InitRootNodeTrees(MinDistanceStarted, NodeIndexList, null);
+       /* List<PlanetoidNodeData> RootNodeDataList = InitRootNodeTrees(MinDistanceStarted, NodeIndexList, null);
         RootNodes = new List<PlanetoidNode>();
         for(int r = 0; r < RootNodeDataList.Count; r++)
         {
             RootNodes.Add(AllNodeArr[RootNodeDataList[r].NodeIndex]);
         }
 
-        string ChildCount = "[";
-        string NodeCount = "[";
-        Dictionary<string,int> DistinctNodeCountsOnLongLat = new Dictionary<string, int>();
+       
         List<PlanetoidNode> NodeList = RootNodes;
-        int indexCount = 0;
+       
         while (NodeList != null)
         {
             if (indexCount == 0) ChildCount += NodeList.Count + "";
@@ -107,7 +111,7 @@ public class PlanetoidNodeManager
 
             indexCount++;
         }
-        ChildCount += "]";
+        ChildCount += "]";*/
 
 
         for(int y = 0; y<LatitudeYCount;y++)
@@ -142,93 +146,6 @@ public class PlanetoidNodeManager
         Debug.Log(Info);
     }
     
-    private List<PlanetoidNodeData> InitRootNodeTrees(float MinDistance, List<int> NodeIndexList, PlanetoidNodeData ParentNodeData)
-    {
-        Sphere sphere = SizeSettings.Sphere;
-        List<PlanetoidNodeData> RootNodeDataList = new List<PlanetoidNodeData>();
-
-        if (MinDistance < MinDistanceBetweenTwoPoints)
-        {
-            MinDistance = MinDistanceBetweenTwoPoints;
-        }
-
-
-        for (int i = NodeIndexList.Count - 1; i >= 0; i--)
-        {
-
-            PlanetoidNodeData RootNodeData = null;
-            PlanetoidNode CheckNode = AllNodeArr[NodeIndexList[i]];
-
-            for (int r = RootNodeDataList.Count - 1; r >= 0; r--)
-            {
-                PlanetoidNode RootNode = AllNodeArr[RootNodeDataList[r].NodeIndex];
-
-                if (sphere.Distance(RootNode.LocalSpacePoint, CheckNode.LocalSpacePoint) <= MinDistance)
-                {
-                    RootNodeData = RootNodeDataList[r];
-                    break;
-                }
-            }
-
-            if (RootNodeData == null)
-            {
-                RootNodeDataList.Add(new PlanetoidNodeData(NodeIndexList[i]));
-            }
-            else
-            {
-                RootNodeData.ChildrenNodeIndexList.Add(CheckNode.NodeIndex);
-            }
-
-            NodeIndexList.RemoveAt(i);
-        }
-
-        MinDistance = MinDistance / PlanetoidNode.GOLDEN_RATIO;
-
-        if (RootNodeDataList.Count == 0)
-        {
-            if (ParentNodeData != null)
-            {
-                for (int i = NodeIndexList.Count - 1; i >= 0; i--)
-                {
-                    AllNodeArr[ParentNodeData.NodeIndex].AddChildNode(AllNodeArr[NodeIndexList[i]]);
-                }
-            }
-
-        }
-        else if (ParentNodeData != null)
-        {
-            for (int r = RootNodeDataList.Count - 1; r >= 0; r--)
-            {
-                PlanetoidNodeData RootNodeData = RootNodeDataList[r];
-                AllNodeArr[ParentNodeData.NodeIndex].AddChildNode(AllNodeArr[RootNodeData.NodeIndex]);
-                InitRootNodeTrees(MinDistance, RootNodeData.ChildrenNodeIndexList, RootNodeData);
-            }
-        }
-        else
-        {
-            for (int r = RootNodeDataList.Count - 1; r >= 0; r--)
-            {
-                PlanetoidNodeData RootNodeData = RootNodeDataList[r];
-                InitRootNodeTrees(MinDistance, RootNodeData.ChildrenNodeIndexList, RootNodeData);
-            }
-        }
-
-
-        /*else
-        {
-            if (ParentNodeData != null)
-            {
-                PlanetoidNode ParentNode = AllNodeArr[ParentNodeData.NodeIndex];
-                for (int i = NodeIndexList.Count - 1; i >= 0; i--)
-                {
-                    ParentNode.AddChildNode(AllNodeArr[NodeIndexList[i]]);
-                }
-            }
-        }*/
-
-        return RootNodeDataList;
-    }
-
     public PlanetoidNode FindNearestNode(Vector3 LocalSpacePointOnSphere)
     {
         PlanetoidNodeLongLat SpherePoint = new PlanetoidNodeLongLat(LongLatScale, SizeSettings.Radius, LocalSpacePointOnSphere);
@@ -304,7 +221,7 @@ public class PlanetoidNodeManager
 
             NodesOnBoundary.ForEach((PlanetoidNode Node) => {
                 if(NearestNode == null || sphere.Distance(LocalSpacePointOnSphere,Node.LocalSpacePoint) < sphere.Distance(LocalSpacePointOnSphere, NearestNode.LocalSpacePoint))
-                    if(Node.Parent!=null)
+                    //if(Node.Parent!=null)
                         NearestNode = Node; 
             });
 
@@ -325,8 +242,9 @@ public class PlanetoidNodeManager
 
         float Scale = Mathf.Abs(CenterY - ((float)LatitudeYCount/2f))/ ((float)LatitudeYCount / 2f);
         float ScaleX = Scale + 1f;
-        float ScaleY = 1f - Scale;
+        float ScaleY = (1f - Scale);
         ScaleY *= 2f;
+        ScaleY = 1f;
         float IndexRangeX = (float)IndexRange * ScaleX;
         float IndexRangeY = (float)IndexRange * ScaleY;
 
@@ -375,14 +293,25 @@ public class PlanetoidNodeManager
                 UpYF = DownYF;
                 DownYF = Temp;
             }*/
+
+            if(UpYF<0)
+            {
+                UpYF = 0;
+                DownYF = UpYF + (IndexRangeY * 2f);
+            }
+            else if (DownYF> LatitudeYCount-1)
+            {
+                DownYF = LatitudeYCount - 1f;
+                UpYF = DownYF - (IndexRangeY * 2f);
+            }
         }
 
 
 
         //LeftXF = LeftXF < 0 ? 0 : LeftXF;
         //RightXF = RightXF >= LongitudeXCount ? LongitudeXCount - 1 : RightXF;
-        UpYF = UpYF < 0 ? 0 : UpYF;
-        DownYF = DownYF >= LatitudeYCount ? LatitudeYCount - 1 : DownYF;
+        //UpYF = UpYF < 0 ? 0 : UpYF;
+        //DownYF = DownYF >= LatitudeYCount ? LatitudeYCount - 1 : DownYF;
 
         int LeftX = (int)LeftXF;
         int RightX = (int)RightXF;
@@ -393,13 +322,14 @@ public class PlanetoidNodeManager
 
         for (int y = UpY; y <= DownY; y++)
         {
-            int yy = y < 0 ? y + LatitudeYCount : y >= LatitudeYCount ? y - LatitudeYCount : y;
+            //int yy = y < 0 ? y + LatitudeYCount : y >= LatitudeYCount ? y - LatitudeYCount : y;
 
             for (int x = LeftX; x <= RightX; x++)
             {
                 int xx = x < 0 ? x + LongitudeXCount : x >= LongitudeXCount ? x - LongitudeXCount : x;
-                if (AllNodes2dArr[yy, xx] != null)
-                    NearestNodes.AddRange(AllNodes2dArr[yy, xx].FindAll(v=>v.NodeType==PlanetoidNodeType.TREE));
+                if (AllNodes2dArr[y, xx] != null)
+                    NearestNodes.AddRange(AllNodes2dArr[y, xx]);
+                    //NearestNodes.AddRange(AllNodes2dArr[y, xx].FindAll(v=>v.NodeType==PlanetoidNodeType.TREE));
             }
         }
                
@@ -409,4 +339,82 @@ public class PlanetoidNodeManager
         return NearestNodes;
     }
 
- }
+    public PlanetoidNode GetNodeAtIndex(int Index)
+    {
+        return AllNodeArr[Index];
+    }
+
+    /*private List<PlanetoidNodeData> InitRootNodeTrees(float MinDistance, List<int> NodeIndexList, PlanetoidNodeData ParentNodeData)
+    {
+        Sphere sphere = SizeSettings.Sphere;
+        List<PlanetoidNodeData> RootNodeDataList = new List<PlanetoidNodeData>();
+
+        if (MinDistance < MinDistanceBetweenTwoPoints)
+        {
+            MinDistance = MinDistanceBetweenTwoPoints;
+        }
+
+
+        for (int i = NodeIndexList.Count - 1; i >= 0; i--)
+        {
+
+            PlanetoidNodeData RootNodeData = null;
+            PlanetoidNode CheckNode = AllNodeArr[NodeIndexList[i]];
+
+            for (int r = RootNodeDataList.Count - 1; r >= 0; r--)
+            {
+                PlanetoidNode RootNode = AllNodeArr[RootNodeDataList[r].NodeIndex];
+
+                if (sphere.Distance(RootNode.LocalSpacePoint, CheckNode.LocalSpacePoint) <= MinDistance)
+                {
+                    RootNodeData = RootNodeDataList[r];
+                    break;
+                }
+            }
+
+            if (RootNodeData == null)
+            {
+                RootNodeDataList.Add(new PlanetoidNodeData(NodeIndexList[i]));
+            }
+            else
+            {
+                RootNodeData.ChildrenNodeIndexList.Add(CheckNode.NodeIndex);
+            }
+
+            NodeIndexList.RemoveAt(i);
+        }
+
+        MinDistance = MinDistance / PlanetoidNode.GOLDEN_RATIO;
+
+        if (RootNodeDataList.Count == 0)
+        {
+            if (ParentNodeData != null)
+            {
+                for (int i = NodeIndexList.Count - 1; i >= 0; i--)
+                {
+                    AllNodeArr[ParentNodeData.NodeIndex].AddChildNode(AllNodeArr[NodeIndexList[i]]);
+                }
+            }
+
+        }
+        else if (ParentNodeData != null)
+        {
+            for (int r = RootNodeDataList.Count - 1; r >= 0; r--)
+            {
+                PlanetoidNodeData RootNodeData = RootNodeDataList[r];
+                AllNodeArr[ParentNodeData.NodeIndex].AddChildNode(AllNodeArr[RootNodeData.NodeIndex]);
+                InitRootNodeTrees(MinDistance, RootNodeData.ChildrenNodeIndexList, RootNodeData);
+            }
+        }
+        else
+        {
+            for (int r = RootNodeDataList.Count - 1; r >= 0; r--)
+            {
+                PlanetoidNodeData RootNodeData = RootNodeDataList[r];
+                InitRootNodeTrees(MinDistance, RootNodeData.ChildrenNodeIndexList, RootNodeData);
+            }
+        }
+
+        return RootNodeDataList;
+    }*/
+}
